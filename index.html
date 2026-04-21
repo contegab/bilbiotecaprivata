@@ -283,7 +283,7 @@ textarea.field-input { height:auto; padding:10px 14px; resize:none; line-height:
     <div class="auth-logo">📚</div>
     <div class="auth-title">Biblioteca Privata</div>
     <div class="auth-subtitle" id="auth-subtitle">Il tuo catalogo personale</div>
-    <div style="font-size:11px;color:var(--ink-light);opacity:0.5;text-align:center;margin-top:-20px;margin-bottom:8px">v2.75</div>
+    <div style="font-size:11px;color:var(--ink-light);opacity:0.5;text-align:center;margin-top:-20px;margin-bottom:8px">v2.77</div>
     <div class="divider-gold"></div>
     <div id="auth-setup" style="display:none">
       <label class="field-label">Crea password</label>
@@ -306,7 +306,7 @@ textarea.field-input { height:auto; padding:10px 14px; resize:none; line-height:
 <!-- MAIN -->
 <div id="screen-main">
   <div class="app-header">
-    <span class="header-title">📚 Biblioteca <small style="font-size:11px;opacity:0.6">v2.75</small></span>
+    <span class="header-title">📚 Biblioteca <small style="font-size:11px;opacity:0.6">v2.77</small></span>
     <span class="drive-status" id="drive-status">Drive</span>
     <button class="header-btn" title="Sincronizza" onclick="syncDrive()">☁</button>
     <button class="header-btn" title="Impostazioni" onclick="openSettings()">⚙</button>
@@ -504,7 +504,7 @@ textarea.field-input { height:auto; padding:10px 14px; resize:none; line-height:
       <div class="settings-section-title">🔍 Barcode Lookup API</div>
       <div class="form-group">
         <label class="field-label">API Key <small style="opacity:0.6">(barcodelookup.com — opzionale)</small></label>
-        <input class="field-input" type="text" id="s-barcode-key" placeholder="es. abc123xyz..." autocomplete="off">
+        <input class="field-input" type="password" id="s-barcode-key" placeholder="es. abc123xyz..." autocomplete="off">
         <div style="font-size:11px;opacity:0.6;margin-top:3px">Migliora la ricerca per libri italiani. Piano gratuito: 50 ricerche/mese.</div>
         <div style="display:flex;gap:8px;margin-top:8px">
           <button class="btn-secondary" onclick="saveBarcodeLookupKey()">Salva chiave</button>
@@ -688,8 +688,10 @@ async function loadSecureData() {
     clientId     = obj.clientId     || '';
     clientSecret = obj.clientSecret || '';
     refreshToken = obj.refreshToken || '';
-    // Aggiorna la cache locale del refreshToken
     if (refreshToken) localStorage.setItem('bp_rt_cache', btoa(refreshToken));
+    // Carica email da cache locale se disponibile
+    const cachedEmail = localStorage.getItem('bp_drive_email');
+    if (cachedEmail) driveUserEmail = cachedEmail;
     // Ripristina chiave BL da bp_secure, o mantieni quella già in localStorage
     if (obj.barcodeKey) {
       localStorage.setItem('bp_barcode_key', obj.barcodeKey);
@@ -759,9 +761,7 @@ async function enterApp() {
   loadBooksFromLocal();
   applyFilters();
   updateStats();
-  // Carica email Drive da cache locale
-  driveUserEmail = localStorage.getItem('bp_drive_email') || '';
-  // Carica credenziali cifrate
+  // Carica credenziali cifrate (include email da cache)
   await loadSecureData();
   updateCredsStatus();
   // Connessione Drive automatica
@@ -2353,15 +2353,9 @@ function loadBarcodeLookupKey() {
   const key = localStorage.getItem('bp_barcode_key');
   const el = document.getElementById('s-barcode-key');
   if (el) {
-    if (key) {
-      el.value = key;
-      // Mostra stato chiave salvata
-      const statusEl = document.getElementById('bl-key-status');
-      if (statusEl) { statusEl.textContent = '✓ Chiave presente — premi Testa per verificarla'; statusEl.style.color = 'var(--green)'; }
-    } else {
-      const statusEl = document.getElementById('bl-key-status');
-      if (statusEl) { statusEl.textContent = 'Nessuna chiave configurata'; statusEl.style.color = 'var(--ink-light)'; }
-    }
+    // Non mostrare la chiave in chiaro — lascia il campo vuoto se già salvata
+    el.value = '';
+    el.placeholder = key ? '••••••••••••••••••••' : 'es. abc123xyz...';
   }
 }
 
