@@ -283,7 +283,7 @@ textarea.field-input { height:auto; padding:10px 14px; resize:none; line-height:
     <div class="auth-logo">📚</div>
     <div class="auth-title">Biblioteca Privata</div>
     <div class="auth-subtitle" id="auth-subtitle">Il tuo catalogo personale</div>
-    <div style="font-size:11px;color:var(--ink-light);opacity:0.5;text-align:center;margin-top:-20px;margin-bottom:8px">v2.77</div>
+    <div style="font-size:11px;color:var(--ink-light);opacity:0.5;text-align:center;margin-top:-20px;margin-bottom:8px">v2.79</div>
     <div class="divider-gold"></div>
     <div id="auth-setup" style="display:none">
       <label class="field-label">Crea password</label>
@@ -306,7 +306,7 @@ textarea.field-input { height:auto; padding:10px 14px; resize:none; line-height:
 <!-- MAIN -->
 <div id="screen-main">
   <div class="app-header">
-    <span class="header-title">📚 Biblioteca <small style="font-size:11px;opacity:0.6">v2.77</small></span>
+    <span class="header-title">📚 Biblioteca <small style="font-size:11px;opacity:0.6">v2.79</small></span>
     <span class="drive-status" id="drive-status">Drive</span>
     <button class="header-btn" title="Sincronizza" onclick="syncDrive()">☁</button>
     <button class="header-btn" title="Impostazioni" onclick="openSettings()">⚙</button>
@@ -767,21 +767,7 @@ async function enterApp() {
   // Connessione Drive automatica
   if (refreshToken) setTimeout(async () => {
     const t = await ensureToken();
-    if (t) {
-      loadFromDrive();
-      // Recupera email se non già presente
-      if (!driveUserEmail) {
-        try {
-          const r = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', { headers:{ Authorization:'Bearer '+t } });
-          const u = await r.json();
-          if (u.email) {
-            driveUserEmail = u.email;
-            localStorage.setItem('bp_drive_email', u.email);
-            updateCredsStatus();
-          }
-        } catch(e) {}
-      }
-    }
+    if (t) loadFromDrive();
   }, 400);
   // Gestione resume app su mobile: se le variabili JS vengono perse (RAM liberata)
   // torna al login quando l'utente riapre l'app
@@ -888,6 +874,15 @@ function updateCredsStatus() {
   }
 }
 
+// Estrae email dal JWT id_token di Google (senza chiamate API)
+function emailFromIdToken(idToken) {
+  try {
+    const payload = idToken.split('.')[1];
+    const decoded = JSON.parse(atob(payload.replace(/-/g,'+').replace(/_/g,'/')));
+    return decoded.email || '';
+  } catch(e) { return ''; }
+}
+
 async function disconnectDrive() {
   const ok = await showConfirm('Disconnetti Drive', 'Rimuovi le credenziali Google Drive salvate? Dovrai ricaricare il credentials.json e riautorizzare.');
   if (!ok) return;
@@ -971,19 +966,15 @@ async function handleOAuthCallback() {
       accessToken  = data.access_token;
       tokenExpiry  = Date.now() + (data.expires_in - 60) * 1000;
       localStorage.setItem('bp_rt_cache', btoa(refreshToken));
-      await saveSecureData(clientId, clientSecret, refreshToken);
-      // Recupera email account Google
-      try {
-        const uInfo = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-          headers: { Authorization: 'Bearer ' + accessToken }
-        });
-        const uData = await uInfo.json();
-        if (uData.email) {
-          driveUserEmail = uData.email;
-          localStorage.setItem('bp_drive_email', uData.email);
-          updateCredsStatus();
+      // Estrai email dal id_token JWT — nessuna chiamata API necessaria
+      if (data.id_token) {
+        const email = emailFromIdToken(data.id_token);
+        if (email) {
+          driveUserEmail = email;
+          localStorage.setItem('bp_drive_email', email);
         }
-      } catch(e) {}
+      }
+      await saveSecureData(clientId, clientSecret, refreshToken);
       updateCredsStatus();
       toast('Google Drive connesso ✓');
       loadFromDrive();
@@ -2215,22 +2206,7 @@ async function readBarcodeFromFile(input){
 async function openSettings() {
   loadBarcodeLookupKey();
   renderIsbnLogs();
-  // Se connesso ma email non ancora recuperata, chiamala ora
-  if (refreshToken && !driveUserEmail) {
-    try {
-      const t = await ensureToken();
-      if (t) {
-        const r = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-          headers: { Authorization: 'Bearer ' + t }
-        });
-        const u = await r.json();
-        if (u.email) {
-          driveUserEmail = u.email;
-          localStorage.setItem('bp_drive_email', u.email);
-        }
-      }
-    } catch(e) {}
-  }
+
   updateCredsStatus();
   renderBackupSlots();
   document.getElementById('overlay-settings').classList.add('open');
@@ -2314,7 +2290,9 @@ async function saveBarcodeLookupKey() {
 }
 
 async function testBarcodeLookupKey() {
-  const key = document.getElementById('s-barcode-key').value.trim();
+  // Usa il valore del campo se inserito, altrimenti usa la chiave salvata
+  const fieldVal = document.getElementById('s-barcode-key').value.trim();
+  const key = fieldVal || localStorage.getItem('bp_barcode_key') || '';
   const statusEl = document.getElementById('bl-key-status');
   if (!key) { statusEl.textContent = '⚠ Inserisci prima una chiave'; statusEl.style.color = 'var(--gold)'; return; }
   statusEl.textContent = '⏳ Test in corso...'; statusEl.style.color = 'var(--ink-light)';
