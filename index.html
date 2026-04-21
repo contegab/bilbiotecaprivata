@@ -283,6 +283,7 @@ textarea.field-input { height:auto; padding:10px 14px; resize:none; line-height:
     <div class="auth-logo">📚</div>
     <div class="auth-title">Biblioteca Privata</div>
     <div class="auth-subtitle" id="auth-subtitle">Il tuo catalogo personale</div>
+    <div style="font-size:11px;color:var(--ink-light);opacity:0.5;text-align:center;margin-top:-20px;margin-bottom:8px">v2.72</div>
     <div class="divider-gold"></div>
     <div id="auth-setup" style="display:none">
       <label class="field-label">Crea password</label>
@@ -305,7 +306,7 @@ textarea.field-input { height:auto; padding:10px 14px; resize:none; line-height:
 <!-- MAIN -->
 <div id="screen-main">
   <div class="app-header">
-    <span class="header-title">📚 Biblioteca <small style="font-size:11px;opacity:0.6">v2.71</small></span>
+    <span class="header-title">📚 Biblioteca <small style="font-size:11px;opacity:0.6">v2.72</small></span>
     <span class="drive-status" id="drive-status">Drive</span>
     <button class="header-btn" title="Sincronizza" onclick="syncDrive()">☁</button>
     <button class="header-btn" title="Impostazioni" onclick="openSettings()">⚙</button>
@@ -611,6 +612,7 @@ let clientId      = '';
 let clientSecret  = '';
 let refreshToken  = '';
 let credsFileName = ''; // nome file credentials.json caricato
+let driveUserEmail = ''; // email account Google connesso
 let driveFolderId = null;
 let driveFileId   = null;
 
@@ -839,25 +841,57 @@ function updateCredsStatus() {
   if (!el) return;
   const fname = credsFileName || (clientId ? 'credentials.json' : '');
   if (clientId && refreshToken) {
-    el.innerHTML = '<span style="color:var(--green)">✓ Connesso a Google Drive</span>' +
-      (fname ? '<br><span style="font-size:11px;color:var(--green);opacity:0.8">📄 ' + fname + '</span>' : '');
+    el.innerHTML =
+      '<span style="color:var(--green)">✓ Connesso a Google Drive</span>' +
+      (driveUserEmail ? '<br><span style="font-size:11px;color:var(--green);opacity:0.9">👤 ' + driveUserEmail + '</span>' : '') +
+      (fname ? '<br><span style="font-size:11px;color:var(--green);opacity:0.7">📄 ' + fname + '</span>' : '') +
+      '<br><button class="btn-xs" style="margin-top:6px" onclick="disconnectDrive()">🔌 Disconnetti Drive</button>';
     setDriveStatus(true);
   } else if (clientId) {
-    el.innerHTML = '<span style="color:var(--gold2)">⚠ Credenziali caricate — clicca Sincronizza per autorizzare</span>' +
-      (fname ? '<br><span style="font-size:11px;color:var(--gold2);opacity:0.8">📄 ' + fname + '</span>' : '');
+    el.innerHTML =
+      '<span style="color:var(--gold2)">⚠ Credenziali caricate — clicca Sincronizza per autorizzare</span>' +
+      (fname ? '<br><span style="font-size:11px;color:var(--gold2);opacity:0.8">📄 ' + fname + '</span>' : '') +
+      '<br><button class="btn-xs" style="margin-top:6px" onclick="disconnectDrive()">🗑 Rimuovi credenziali</button>';
   } else {
     el.innerHTML = '<span style="color:var(--red)">✗ Nessuna credenziale caricata</span>';
   }
-  // Aggiorna anche stato chiave Barcode Lookup
+  // Aggiorna stato chiave Barcode Lookup
   const blEl = document.getElementById('bl-key-status');
   if (blEl) {
     const blKey = localStorage.getItem('bp_barcode_key');
     if (blKey) {
-      blEl.innerHTML = '<span style="color:var(--green)">✓ Chiave presente (' + blKey.slice(0,6) + '...)</span>';
+      blEl.innerHTML =
+        '<span style="color:var(--green)">✓ Chiave presente (' + blKey.slice(0,6) + '...)</span>' +
+        '<br><button class="btn-xs" style="margin-top:6px" onclick="disconnectBarcodeLookup()">🗑 Rimuovi chiave</button>';
     } else {
       blEl.innerHTML = '<span style="color:var(--red)">✗ Nessuna chiave configurata</span>';
     }
   }
+}
+
+async function disconnectDrive() {
+  const ok = await showConfirm('Disconnetti Drive', 'Rimuovi le credenziali Google Drive salvate? Dovrai ricaricare il credentials.json e riautorizzare.');
+  if (!ok) return;
+  clientId = ''; clientSecret = ''; refreshToken = ''; driveUserEmail = ''; credsFileName = '';
+  driveFolderId = null; driveFileId = null; accessToken = null; tokenExpiry = 0;
+  localStorage.removeItem('bp_rt_cache');
+  localStorage.removeItem('bp_oauth_pending');
+  localStorage.removeItem('bp_oauth_tmp_id');
+  localStorage.removeItem('bp_oauth_tmp_sec');
+  await saveSecureData('', '', '');
+  setDriveStatus(false);
+  updateCredsStatus();
+  toast('Credenziali Drive rimosse');
+}
+
+async function disconnectBarcodeLookup() {
+  const ok = await showConfirm('Rimuovi chiave', 'Rimuovere la chiave API Barcode Lookup?');
+  if (!ok) return;
+  localStorage.removeItem('bp_barcode_key');
+  document.getElementById('s-barcode-key').value = '';
+  await saveSecureData(clientId, clientSecret, refreshToken);
+  updateCredsStatus();
+  toast('Chiave Barcode Lookup rimossa');
 }
 
 function startOAuthFlow() {
@@ -944,7 +978,17 @@ async function ensureToken() {
     if (data.access_token) {
       accessToken = data.access_token;
       tokenExpiry = Date.now() + (data.expires_in - 60) * 1000;
+      if (data.refresh_token) {
+        refreshToken = data.refresh_token;
+        localStorage.setItem('bp_rt_cache', btoa(refreshToken));
+      }
       setDriveStatus(true);
+      // Recupera email account Google (best-effort)
+      if (!driveUserEmail) {
+        fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+          headers: { Authorization: 'Bearer ' + accessToken }
+        }).then(r=>r.json()).then(u=>{ if(u.email){ driveUserEmail=u.email; updateCredsStatus(); } }).catch(()=>{});
+      }
       return accessToken;
     }
   } catch {}
