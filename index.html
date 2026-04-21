@@ -283,7 +283,7 @@ textarea.field-input { height:auto; padding:10px 14px; resize:none; line-height:
     <div class="auth-logo">📚</div>
     <div class="auth-title">Biblioteca Privata</div>
     <div class="auth-subtitle" id="auth-subtitle">Il tuo catalogo personale</div>
-    <div style="font-size:11px;color:var(--ink-light);opacity:0.5;text-align:center;margin-top:-20px;margin-bottom:8px">v2.72</div>
+    <div style="font-size:11px;color:var(--ink-light);opacity:0.5;text-align:center;margin-top:-20px;margin-bottom:8px">v2.73</div>
     <div class="divider-gold"></div>
     <div id="auth-setup" style="display:none">
       <label class="field-label">Crea password</label>
@@ -306,7 +306,7 @@ textarea.field-input { height:auto; padding:10px 14px; resize:none; line-height:
 <!-- MAIN -->
 <div id="screen-main">
   <div class="app-header">
-    <span class="header-title">📚 Biblioteca <small style="font-size:11px;opacity:0.6">v2.72</small></span>
+    <span class="header-title">📚 Biblioteca <small style="font-size:11px;opacity:0.6">v2.73</small></span>
     <span class="drive-status" id="drive-status">Drive</span>
     <button class="header-btn" title="Sincronizza" onclick="syncDrive()">☁</button>
     <button class="header-btn" title="Impostazioni" onclick="openSettings()">⚙</button>
@@ -763,7 +763,20 @@ async function enterApp() {
   await loadSecureData();
   updateCredsStatus();
   // Connessione Drive automatica
-  if (refreshToken) setTimeout(() => ensureToken().then(t => { if(t) loadFromDrive(); }), 400);
+  if (refreshToken) setTimeout(async () => {
+    const t = await ensureToken();
+    if (t) {
+      loadFromDrive();
+      // Recupera email se non già presente
+      if (!driveUserEmail) {
+        try {
+          const r = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', { headers:{ Authorization:'Bearer '+t } });
+          const u = await r.json();
+          if (u.email) { driveUserEmail = u.email; updateCredsStatus(); }
+        } catch(e) {}
+      }
+    }
+  }, 400);
   // Gestione resume app su mobile: se le variabili JS vengono perse (RAM liberata)
   // torna al login quando l'utente riapre l'app
   document.addEventListener('visibilitychange', () => {
@@ -950,9 +963,16 @@ async function handleOAuthCallback() {
       refreshToken = data.refresh_token;
       accessToken  = data.access_token;
       tokenExpiry  = Date.now() + (data.expires_in - 60) * 1000;
-      // Salva refreshToken anche in localStorage come fallback per mobile PWA
       localStorage.setItem('bp_rt_cache', btoa(refreshToken));
       await saveSecureData(clientId, clientSecret, refreshToken);
+      // Recupera email account Google
+      try {
+        const uInfo = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+          headers: { Authorization: 'Bearer ' + accessToken }
+        });
+        const uData = await uInfo.json();
+        if (uData.email) driveUserEmail = uData.email;
+      } catch(e) {}
       updateCredsStatus();
       toast('Google Drive connesso ✓');
       loadFromDrive();
