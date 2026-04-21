@@ -283,7 +283,7 @@ textarea.field-input { height:auto; padding:10px 14px; resize:none; line-height:
     <div class="auth-logo">📚</div>
     <div class="auth-title">Biblioteca Privata</div>
     <div class="auth-subtitle" id="auth-subtitle">Il tuo catalogo personale</div>
-    <div style="font-size:11px;color:var(--ink-light);opacity:0.5;text-align:center;margin-top:-20px;margin-bottom:8px">v2.79</div>
+    <div style="font-size:11px;color:var(--ink-light);opacity:0.5;text-align:center;margin-top:-20px;margin-bottom:8px">v2.81</div>
     <div class="divider-gold"></div>
     <div id="auth-setup" style="display:none">
       <label class="field-label">Crea password</label>
@@ -306,7 +306,7 @@ textarea.field-input { height:auto; padding:10px 14px; resize:none; line-height:
 <!-- MAIN -->
 <div id="screen-main">
   <div class="app-header">
-    <span class="header-title">📚 Biblioteca <small style="font-size:11px;opacity:0.6">v2.79</small></span>
+    <span class="header-title">📚 Biblioteca <small style="font-size:11px;opacity:0.6">v2.81</small></span>
     <span class="drive-status" id="drive-status">Drive</span>
     <button class="header-btn" title="Sincronizza" onclick="syncDrive()">☁</button>
     <button class="header-btn" title="Impostazioni" onclick="openSettings()">⚙</button>
@@ -848,7 +848,7 @@ function updateCredsStatus() {
   if (clientId && refreshToken) {
     el.innerHTML =
       '<span style="color:var(--green)">✓ Connesso a Google Drive</span>' +
-      (driveUserEmail ? '<br><span style="font-size:11px;color:var(--green);opacity:0.9">👤 ' + driveUserEmail + '</span>' : '') +
+      (driveUserEmail ? '<br><span style="font-size:12px;color:var(--green);font-weight:500">👤 ' + driveUserEmail + '</span>' : '') +
       (fname ? '<br><span style="font-size:11px;color:var(--green);opacity:0.7">📄 ' + fname + '</span>' : '') +
       '<br><button class="btn-xs" style="margin-top:6px" onclick="disconnectDrive()">🔌 Disconnetti Drive</button>';
     setDriveStatus(true);
@@ -2206,7 +2206,27 @@ async function readBarcodeFromFile(input){
 async function openSettings() {
   loadBarcodeLookupKey();
   renderIsbnLogs();
-
+  // Recupera email Google se connesso ma non ancora in cache
+  if (refreshToken && !driveUserEmail) {
+    const cached = localStorage.getItem('bp_drive_email');
+    if (cached) {
+      driveUserEmail = cached;
+    } else {
+      // Prova a recuperare tramite API — asincrono, aggiorna dopo
+      ensureToken().then(t => {
+        if (!t) return;
+        fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+          headers: { Authorization: 'Bearer ' + t }
+        }).then(r => r.json()).then(u => {
+          if (u.email) {
+            driveUserEmail = u.email;
+            localStorage.setItem('bp_drive_email', u.email);
+            updateCredsStatus();
+          }
+        }).catch(() => {});
+      });
+    }
+  }
   updateCredsStatus();
   renderBackupSlots();
   document.getElementById('overlay-settings').classList.add('open');
