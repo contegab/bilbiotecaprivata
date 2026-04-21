@@ -283,7 +283,7 @@ textarea.field-input { height:auto; padding:10px 14px; resize:none; line-height:
     <div class="auth-logo">📚</div>
     <div class="auth-title">Biblioteca Privata</div>
     <div class="auth-subtitle" id="auth-subtitle">Il tuo catalogo personale</div>
-    <div style="font-size:11px;color:var(--ink-light);opacity:0.5;text-align:center;margin-top:-20px;margin-bottom:8px">v2.73</div>
+    <div style="font-size:11px;color:var(--ink-light);opacity:0.5;text-align:center;margin-top:-20px;margin-bottom:8px">v2.74</div>
     <div class="divider-gold"></div>
     <div id="auth-setup" style="display:none">
       <label class="field-label">Crea password</label>
@@ -306,7 +306,7 @@ textarea.field-input { height:auto; padding:10px 14px; resize:none; line-height:
 <!-- MAIN -->
 <div id="screen-main">
   <div class="app-header">
-    <span class="header-title">📚 Biblioteca <small style="font-size:11px;opacity:0.6">v2.73</small></span>
+    <span class="header-title">📚 Biblioteca <small style="font-size:11px;opacity:0.6">v2.74</small></span>
     <span class="drive-status" id="drive-status">Drive</span>
     <button class="header-btn" title="Sincronizza" onclick="syncDrive()">☁</button>
     <button class="header-btn" title="Impostazioni" onclick="openSettings()">⚙</button>
@@ -584,7 +584,7 @@ const DRIVE_FILE      = 'books.json';
 const OAUTH_SCOPE     = 'https://www.googleapis.com/auth/drive.file';
 const GOOGLE_API      = 'https://www.googleapis.com/';
 const GOOGLE_TOKEN    = 'https://oauth2.googleapis.com/token';
-const MAX_BACKUPS     = 3;
+const MAX_BACKUPS     = 5;
 
 // ═══════════════════════════════════
 //  STATO
@@ -759,6 +759,8 @@ async function enterApp() {
   loadBooksFromLocal();
   applyFilters();
   updateStats();
+  // Carica email Drive da cache locale
+  driveUserEmail = localStorage.getItem('bp_drive_email') || '';
   // Carica credenziali cifrate
   await loadSecureData();
   updateCredsStatus();
@@ -772,7 +774,11 @@ async function enterApp() {
         try {
           const r = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', { headers:{ Authorization:'Bearer '+t } });
           const u = await r.json();
-          if (u.email) { driveUserEmail = u.email; updateCredsStatus(); }
+          if (u.email) {
+            driveUserEmail = u.email;
+            localStorage.setItem('bp_drive_email', u.email);
+            updateCredsStatus();
+          }
         } catch(e) {}
       }
     }
@@ -886,6 +892,7 @@ async function disconnectDrive() {
   const ok = await showConfirm('Disconnetti Drive', 'Rimuovi le credenziali Google Drive salvate? Dovrai ricaricare il credentials.json e riautorizzare.');
   if (!ok) return;
   clientId = ''; clientSecret = ''; refreshToken = ''; driveUserEmail = ''; credsFileName = '';
+  localStorage.removeItem('bp_drive_email');
   driveFolderId = null; driveFileId = null; accessToken = null; tokenExpiry = 0;
   localStorage.removeItem('bp_rt_cache');
   localStorage.removeItem('bp_oauth_pending');
@@ -971,7 +978,11 @@ async function handleOAuthCallback() {
           headers: { Authorization: 'Bearer ' + accessToken }
         });
         const uData = await uInfo.json();
-        if (uData.email) driveUserEmail = uData.email;
+        if (uData.email) {
+          driveUserEmail = uData.email;
+          localStorage.setItem('bp_drive_email', uData.email);
+          updateCredsStatus();
+        }
       } catch(e) {}
       updateCredsStatus();
       toast('Google Drive connesso ✓');
