@@ -305,7 +305,7 @@ textarea.field-input { height:auto; padding:10px 14px; resize:none; line-height:
 <!-- MAIN -->
 <div id="screen-main">
   <div class="app-header">
-    <span class="header-title">📚 Biblioteca <small style="font-size:11px;opacity:0.6">v2.70</small></span>
+    <span class="header-title">📚 Biblioteca <small style="font-size:11px;opacity:0.6">v2.71</small></span>
     <span class="drive-status" id="drive-status">Drive</span>
     <button class="header-btn" title="Sincronizza" onclick="syncDrive()">☁</button>
     <button class="header-btn" title="Impostazioni" onclick="openSettings()">⚙</button>
@@ -610,6 +610,7 @@ let tokenExpiry   = 0;
 let clientId      = '';
 let clientSecret  = '';
 let refreshToken  = '';
+let credsFileName = ''; // nome file credentials.json caricato
 let driveFolderId = null;
 let driveFileId   = null;
 
@@ -824,6 +825,7 @@ async function loadCredentials(input) {
     if (!creds) return toast('Formato credentials.json non riconosciuto');
     clientId     = creds.client_id;
     clientSecret = creds.client_secret;
+    credsFileName = file.name; // salva nome file
     // Salva cifrato
     await saveSecureData(clientId, clientSecret, refreshToken);
     updateCredsStatus();
@@ -835,16 +837,26 @@ async function loadCredentials(input) {
 function updateCredsStatus() {
   const el = document.getElementById('creds-status');
   if (!el) return;
+  const fname = credsFileName || (clientId ? 'credentials.json' : '');
   if (clientId && refreshToken) {
-    el.textContent = '✓ Connesso a Google Drive';
-    el.style.color = 'var(--green)';
+    el.innerHTML = '<span style="color:var(--green)">✓ Connesso a Google Drive</span>' +
+      (fname ? '<br><span style="font-size:11px;color:var(--green);opacity:0.8">📄 ' + fname + '</span>' : '');
     setDriveStatus(true);
   } else if (clientId) {
-    el.textContent = '⚠ Credenziali caricate — clicca Sincronizza per autorizzare';
-    el.style.color = 'var(--gold2)';
+    el.innerHTML = '<span style="color:var(--gold2)">⚠ Credenziali caricate — clicca Sincronizza per autorizzare</span>' +
+      (fname ? '<br><span style="font-size:11px;color:var(--gold2);opacity:0.8">📄 ' + fname + '</span>' : '');
   } else {
-    el.textContent = 'Nessuna credenziale caricata';
-    el.style.color = 'var(--ink-light)';
+    el.innerHTML = '<span style="color:var(--red)">✗ Nessuna credenziale caricata</span>';
+  }
+  // Aggiorna anche stato chiave Barcode Lookup
+  const blEl = document.getElementById('bl-key-status');
+  if (blEl) {
+    const blKey = localStorage.getItem('bp_barcode_key');
+    if (blKey) {
+      blEl.innerHTML = '<span style="color:var(--green)">✓ Chiave presente (' + blKey.slice(0,6) + '...)</span>';
+    } else {
+      blEl.innerHTML = '<span style="color:var(--red)">✗ Nessuna chiave configurata</span>';
+    }
   }
 }
 
@@ -1583,6 +1595,23 @@ async function lookupIsbn() {
   // Gestione ISSN (prefisso 977) — periodici/riviste
   if (isbn.length === 13 && isbn.startsWith('977')) {
     return lookupISSN(isbn);
+  }
+
+  // Controllo duplicato ISBN
+  const existingBook = allBooks.find(b => {
+    const bIsbn = (b.isbn || '').replace(/[^0-9X]/gi,'').toUpperCase();
+    return bIsbn === isbn || bIsbn === isbn.slice(3, 12) + isbn[12]; // ISBN-13 vs ISBN-10
+  });
+  if (existingBook) {
+    const ok = await showConfirm(
+      'Libro già presente',
+      `"${existingBook.title}" è già nel catalogo con ISBN ${existingBook.isbn}. Vuoi aggiungere comunque un doppione?`
+    );
+    if (!ok) {
+      document.getElementById('f-isbn').value = '';
+      setIsbnStatus('', '');
+      return;
+    }
   }
 
   setIsbnStatus('Ricerca in corso…', '');
