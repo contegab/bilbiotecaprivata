@@ -283,7 +283,7 @@ textarea.field-input { height:auto; padding:10px 14px; resize:none; line-height:
     <div class="auth-logo">📚</div>
     <div class="auth-title">Biblioteca Privata</div>
     <div class="auth-subtitle" id="auth-subtitle">Il tuo catalogo personale</div>
-    <div style="font-size:11px;color:var(--ink-light);opacity:0.5;text-align:center;margin-top:-20px;margin-bottom:8px">v2.84</div>
+    <div style="font-size:11px;color:var(--ink-light);opacity:0.5;text-align:center;margin-top:-20px;margin-bottom:8px">v2.87</div>
     <div class="divider-gold"></div>
     <div id="auth-setup" style="display:none">
       <label class="field-label">Crea password</label>
@@ -306,7 +306,7 @@ textarea.field-input { height:auto; padding:10px 14px; resize:none; line-height:
 <!-- MAIN -->
 <div id="screen-main">
   <div class="app-header">
-    <span class="header-title">📚 Biblioteca <small style="font-size:11px;opacity:0.6">v2.84</small></span>
+    <span class="header-title">📚 Biblioteca <small style="font-size:11px;opacity:0.6">v2.87</small></span>
     <span class="drive-status" id="drive-status">Drive</span>
     <button class="header-btn" title="Sincronizza" onclick="syncDrive()">☁</button>
     <button class="header-btn" title="Impostazioni" onclick="openSettings()">⚙</button>
@@ -369,6 +369,7 @@ textarea.field-input { height:auto; padding:10px 14px; resize:none; line-height:
         <div class="cover-preview" id="cover-preview" onclick="pickCoverFile()">📕</div>
         <div class="cover-actions">
           <button class="btn-secondary" onclick="pickCoverFile()" style="height:36px;font-size:13px">📁 Scegli foto</button>
+          <button class="btn-secondary" onclick="searchCoversOnline()" style="height:36px;font-size:13px">🔍 Cerca online</button>
           <button class="btn-secondary" onclick="clearCover()"    style="height:36px;font-size:13px">✕ Rimuovi</button>
         </div>
       </div>
@@ -1409,7 +1410,7 @@ function renderStars() {
     b.classList.toggle('on', v <= currentRating);
   });
 }
-function setRating(val) { currentRating = val; renderStars(); }
+function setRating(val) { currentRating = (currentRating === val) ? 0 : val; renderStars(); }
 function renderStatusBtns() {
   document.querySelectorAll('.status-btn').forEach(b => {
     b.className = 'status-btn' + (b.dataset.status===currentStatus ? ` active-${currentStatus}` : '');
@@ -1417,6 +1418,30 @@ function renderStatusBtns() {
 }
 function setStatus(btn) { currentStatus = btn.dataset.status; renderStatusBtns(); }
 function pickCoverFile() { document.getElementById('cover-file-input').click(); }
+
+async function searchCoversOnline() {
+  const isbn = document.getElementById('f-isbn').value.replace(/[^0-9X]/gi,'').toUpperCase();
+  if (!isbn) return toast('Inserisci prima un ISBN per cercare le copertine');
+  setIsbnStatus('🖼 Ricerca copertine online…', '');
+  // Usa la catena ISBN per ottenere gbCoverUrl se disponibile
+  let gbCoverUrl = '';
+  // Prova Google Books per la cover URL
+  try {
+    const r = await fetch(`https://www.googleapis.com/books/v1/volumes?q=isbn:${isbn}&maxResults=1`);
+    const d = await r.json();
+    const il = d.items?.[0]?.volumeInfo?.imageLinks;
+    if (il) gbCoverUrl = il.extraLarge || il.large || il.medium || il.thumbnail || '';
+  } catch {}
+  // Azzera selezione corrente e cerca tutte le copertine
+  currentCoverUrl = '';
+  const candidates = await fetchAllCovers(isbn, gbCoverUrl);
+  if (candidates.length > 0) {
+    showCoverPicker(candidates);
+    setIsbnStatus(`${candidates.length} copertine trovate — scegli quella che preferisci`, 'ok');
+  } else {
+    setIsbnStatus('Nessuna copertina trovata online', 'err');
+  }
+}
 function handleCoverFile(input) {
   const file = input.files[0]; if (!file) return;
   const r = new FileReader();
@@ -1882,6 +1907,32 @@ async function lookupIsbn() {
       _dbg('BL: nessuna chiave configurata');
     }
   }
+  // ── 7. Crossref (DOI database — buona copertura accademica italiana) ──
+  if (!found) {
+    try {
+      const r = await fetch(`https://api.crossref.org/works?filter=isbn:${isbn}&rows=1`,
+        { headers: { 'User-Agent': 'BibliotecaPrivata/1.0 (mailto:user@example.com)' } });
+      if (r.ok) {
+        const d = await r.json();
+        const item = d.message?.items?.[0];
+        if (item?.title?.[0]) {
+          found = true;
+          const authors = (item.author || [])
+            .map(a => [a.given, a.family].filter(Boolean).join(' '))
+            .join(', ');
+          fill({
+            title:       item.title[0],
+            author:      authors,
+            publisher:   item.publisher || '',
+            year:        item.published?.['date-parts']?.[0]?.[0] || '',
+            description: item.abstract || '',
+          });
+          _dbg('Crossref: trovato ' + item.title[0]);
+        }
+      }
+    } catch(e) { _dbg('Crossref errore: ' + e.message); }
+  }
+
   _dbg('Risultato finale: found=' + found);
   saveIsbnDebugLog(isbn, _dbgLines.join('\n'));
   renderIsbnLogs();
