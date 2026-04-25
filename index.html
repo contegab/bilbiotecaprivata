@@ -283,7 +283,7 @@ textarea.field-input { height:auto; padding:10px 14px; resize:none; line-height:
     <div class="auth-logo">📚</div>
     <div class="auth-title">Biblioteca Privata</div>
     <div class="auth-subtitle" id="auth-subtitle">Il tuo catalogo personale</div>
-    <div style="font-size:11px;color:var(--ink-light);opacity:0.5;text-align:center;margin-top:-20px;margin-bottom:8px">v2.99</div>
+    <div style="font-size:11px;color:var(--ink-light);opacity:0.5;text-align:center;margin-top:-20px;margin-bottom:8px">v3.00</div>
     <div class="divider-gold"></div>
     <div id="auth-setup" style="display:none">
       <label class="field-label">Crea password</label>
@@ -306,7 +306,7 @@ textarea.field-input { height:auto; padding:10px 14px; resize:none; line-height:
 <!-- MAIN -->
 <div id="screen-main">
   <div class="app-header">
-    <span class="header-title">📚 Biblioteca <small style="font-size:11px;opacity:0.6">v2.99</small></span>
+    <span class="header-title">📚 Biblioteca <small style="font-size:11px;opacity:0.6">v3.00</small></span>
     <span class="drive-status" id="drive-status">Drive</span>
     <button class="header-btn" title="Sincronizza" onclick="syncDrive()">☁</button>
     <button class="header-btn" title="Impostazioni" onclick="openSettings()">⚙</button>
@@ -1548,6 +1548,7 @@ async function searchByTitleAuthor() {
       return (sd.itemSummaries||[]).slice(0,10).filter(item=>item.title).map(item => ({
         title: item.title, author:'', publisher:'', year:'', isbn:'',
         cover: item.image?.imageUrl||'', source:'eBay', description:'',
+        ebayItemId: item.itemId||'', ebayUrl: item.itemWebUrl||'',
       }));
     } catch(e) { return []; }
   }
@@ -1589,26 +1590,80 @@ async function searchByTitleAuthor() {
 }
 
 
-function selectTitleSearchResult(i) {
+async function selectTitleSearchResult(i) {
   const res = window._titleSearchResults?.[i];
   if (!res) return;
-  // Popola i campi del form
+
+  // Popola subito i campi con i dati disponibili
   if (res.isbn)        document.getElementById('f-isbn').value        = res.isbn;
   if (res.title)       document.getElementById('f-title').value       = res.title;
   if (res.author)      document.getElementById('f-author').value      = res.author;
   if (res.publisher)   document.getElementById('f-publisher').value   = res.publisher;
   if (res.year)        document.getElementById('f-year').value        = res.year;
   if (res.description) document.getElementById('f-description').value = res.description;
+
   // Imposta copertina se disponibile
   if (res.cover) {
     currentCoverUrl = res.cover;
     coverDataUrl    = null;
     renderCoverPreview();
   }
-  // Nascondi i risultati
+
+  // Se fonte eBay: recupera dati dettagliati e aggiungi itemId nelle note
+  if (res.source === 'eBay' && res.ebayItemId && ebayClientId && ebaySecret) {
+    toast('Recupero dettagli eBay...');
+    try {
+      const credentials = btoa(`${ebayClientId}:${ebaySecret}`);
+      const tr = await fetch(`https://corsproxy.io/?${encodeURIComponent('https://api.ebay.com/identity/v1/oauth2/token')}`, {
+        method:'POST', headers:{'Authorization':`Basic ${credentials}`,'Content-Type':'application/x-www-form-urlencoded'},
+        body:'grant_type=client_credentials&scope=https%3A%2F%2Fapi.ebay.com%2Foauth%2Fapi_scope'
+      });
+      const td = await tr.json();
+      if (td.access_token) {
+        const itemUrl = `https://api.ebay.com/buy/browse/v1/item/${encodeURIComponent(res.ebayItemId)}`;
+        const ir = await fetch(`https://corsproxy.io/?${encodeURIComponent(itemUrl)}`, {
+          headers:{'Authorization':`Bearer ${td.access_token}`,'X-EBAY-C-MARKETPLACE-ID':'EBAY_IT'}
+        });
+        const id = await ir.json();
+        // Aggiorna campi con dati dettagliati
+        if (id.title && !document.getElementById('f-title').value) document.getElementById('f-title').value = id.title;
+        if (id.description) {
+          // Rimuovi HTML dal description
+          const tmp = document.createElement('div');
+          tmp.innerHTML = id.description;
+          const descText = tmp.textContent.slice(0, 500);
+          if (descText) document.getElementById('f-description').value = descText;
+        }
+        // Cerca ISBN nel testo della descrizione o negli aspecti
+        const aspects = id.localizedAspects || [];
+        const isbnAspect = aspects.find(a => a.name?.toLowerCase().includes('isbn') || a.name?.toLowerCase().includes('ean'));
+        if (isbnAspect?.value && !document.getElementById('f-isbn').value) {
+          document.getElementById('f-isbn').value = isbnAspect.value.replace(/[^0-9X]/gi,'');
+        }
+        // Autore dagli aspetti
+        const authorAspect = aspects.find(a => a.name?.toLowerCase().includes('autore') || a.name?.toLowerCase().includes('author'));
+        if (authorAspect?.value && !document.getElementById('f-author').value) document.getElementById('f-author').value = authorAspect.value;
+        // Editore
+        const pubAspect = aspects.find(a => a.name?.toLowerCase().includes('editore') || a.name?.toLowerCase().includes('publisher'));
+        if (pubAspect?.value && !document.getElementById('f-publisher').value) document.getElementById('f-publisher').value = pubAspect.value;
+        // Anno
+        const yearAspect = aspects.find(a => a.name?.toLowerCase().includes('anno') || a.name?.toLowerCase().includes('year') || a.name?.toLowerCase().includes('data'));
+        if (yearAspect?.value && !document.getElementById('f-year').value) document.getElementById('f-year').value = yearAspect.value.slice(0,4);
+        // Copertina migliorata
+        if (id.image?.imageUrl && !coverDataUrl) { currentCoverUrl = id.image.imageUrl; renderCoverPreview(); }
+        toast('Dettagli eBay caricati ✓');
+      }
+    } catch(e) { toast('Dettagli eBay non disponibili'); }
+
+    // Aggiungi ItemID nelle note
+    const noteEl = document.getElementById('f-notes');
+    const existing = noteEl.value.trim();
+    const ebayNote = `eBay: ${res.ebayItemId}`;
+    noteEl.value = existing ? existing + '\n' + ebayNote : ebayNote;
+  }
+
+  // Nascondi risultati ma mantieni i campi di ricerca
   document.getElementById('title-search-results').style.display = 'none';
-  document.getElementById('f-search-title').value  = '';
-  document.getElementById('f-search-author').value = '';
   toast('Libro selezionato — verifica i dati e salva');
 }
 
