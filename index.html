@@ -283,7 +283,7 @@ textarea.field-input { height:auto; padding:10px 14px; resize:none; line-height:
     <div class="auth-logo">📚</div>
     <div class="auth-title">Biblioteca Privata</div>
     <div class="auth-subtitle" id="auth-subtitle">Il tuo catalogo personale</div>
-    <div style="font-size:11px;color:var(--ink-light);opacity:0.5;text-align:center;margin-top:-20px;margin-bottom:8px">v3.50</div>
+    <div style="font-size:11px;color:var(--ink-light);opacity:0.5;text-align:center;margin-top:-20px;margin-bottom:8px">v3.60</div>
     <div class="divider-gold"></div>
     <div id="auth-setup" style="display:none">
       <label class="field-label">Crea password</label>
@@ -306,7 +306,7 @@ textarea.field-input { height:auto; padding:10px 14px; resize:none; line-height:
 <!-- MAIN -->
 <div id="screen-main">
   <div class="app-header">
-    <span class="header-title">📚 Biblioteca <small style="font-size:11px;opacity:0.6">v3.50</small></span>
+    <span class="header-title">📚 Biblioteca <small style="font-size:11px;opacity:0.6">v3.60</small></span>
     <span class="drive-status" id="drive-status">Drive</span>
     <button class="header-btn" title="Sincronizza" onclick="syncDrive()">☁</button>
     <button class="header-btn" title="Impostazioni" onclick="openSettings()">⚙</button>
@@ -1640,36 +1640,22 @@ async function selectTitleSearchResult(i) {
 
         const findA = (...keys) => aspects.find(a => keys.some(k => a.name?.toLowerCase().includes(k)));
 
-        // ISBN/EAN
-        const isbnA = findA('isbn','ean','codice');
-        if (isbnA?.value && !document.getElementById('f-isbn').value)
-          document.getElementById('f-isbn').value = isbnA.value.replace(/[^0-9X]/gi,'');
-        // Autore
-        const authorA = findA('autore','author');
-        if (authorA?.value && !document.getElementById('f-author').value)
-          document.getElementById('f-author').value = authorA.value;
-        // Editore
-        const pubA = findA('editore','publisher');
-        if (pubA?.value && !document.getElementById('f-publisher').value)
-          document.getElementById('f-publisher').value = pubA.value;
-        // Anno di pubblicazione
-        const yearA = findA('anno di pubblicazione','anno','year');
-        if (yearA?.value && !document.getElementById('f-year').value)
-          document.getElementById('f-year').value = yearA.value.replace(/[^0-9]/g,'').slice(0,4);
-        // Pagine
+        // Popola tutti i campi dagli aspetti eBay — sovrascrive sempre
+        const isbnA  = findA('isbn','ean','codice');
+        const authA  = findA('autore','author');
+        const pubA   = findA('editore','publisher');
+        const yearA  = findA('anno di pubblicazione','anno','year');
         const pagesA = findA('numero di pagine','pagine','pages');
-        if (pagesA?.value && !document.getElementById('f-pages').value)
-          document.getElementById('f-pages').value = pagesA.value.replace(/[^0-9]/g,'');
-        // Lingua
-        const langA = findA('lingua','language');
-        if (langA?.value && !document.getElementById('f-language').value)
-          document.getElementById('f-language').value = langA.value;
-        // Genere/Soggetto
+        const langA  = findA('lingua','language');
         const genreA = findA('genere','soggetto','argomento','genre');
-        if (genreA?.value) {
-          const genreEl = document.getElementById('f-genre');
-          if (genreEl && !genreEl.value) genreEl.value = genreA.value;
-        }
+
+        if (isbnA?.value)  document.getElementById('f-isbn').value      = isbnA.value.replace(/[^0-9X]/gi,'');
+        if (authA?.value)  document.getElementById('f-author').value    = authA.value;
+        if (pubA?.value)   document.getElementById('f-publisher').value = pubA.value;
+        if (yearA?.value)  document.getElementById('f-year').value      = yearA.value.replace(/[^0-9]/g,'').slice(0,4);
+        if (pagesA?.value) document.getElementById('f-pages').value     = pagesA.value.replace(/[^0-9]/g,'');
+        if (langA?.value)  document.getElementById('f-language').value  = langA.value;
+        if (genreA?.value) document.getElementById('f-genre').value     = genreA.value;
         // Copertina migliorata
         if (id.image?.imageUrl && !coverDataUrl) { currentCoverUrl = id.image.imageUrl; renderCoverPreview(); }
         toast('Dettagli eBay caricati ✓');
