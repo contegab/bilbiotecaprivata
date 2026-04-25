@@ -283,7 +283,7 @@ textarea.field-input { height:auto; padding:10px 14px; resize:none; line-height:
     <div class="auth-logo">📚</div>
     <div class="auth-title">Biblioteca Privata</div>
     <div class="auth-subtitle" id="auth-subtitle">Il tuo catalogo personale</div>
-    <div style="font-size:11px;color:var(--ink-light);opacity:0.5;text-align:center;margin-top:-20px;margin-bottom:8px">v2.97</div>
+    <div style="font-size:11px;color:var(--ink-light);opacity:0.5;text-align:center;margin-top:-20px;margin-bottom:8px">v2.98</div>
     <div class="divider-gold"></div>
     <div id="auth-setup" style="display:none">
       <label class="field-label">Crea password</label>
@@ -306,7 +306,7 @@ textarea.field-input { height:auto; padding:10px 14px; resize:none; line-height:
 <!-- MAIN -->
 <div id="screen-main">
   <div class="app-header">
-    <span class="header-title">📚 Biblioteca <small style="font-size:11px;opacity:0.6">v2.97</small></span>
+    <span class="header-title">📚 Biblioteca <small style="font-size:11px;opacity:0.6">v2.98</small></span>
     <span class="drive-status" id="drive-status">Drive</span>
     <button class="header-btn" title="Sincronizza" onclick="syncDrive()">☁</button>
     <button class="header-btn" title="Impostazioni" onclick="openSettings()">⚙</button>
@@ -1461,14 +1461,35 @@ async function searchByTitleAuthor() {
   const gridDiv    = document.getElementById('title-search-grid');
   const countDiv   = document.getElementById('title-search-count');
   resultsDiv.style.display = 'block';
-  gridDiv.innerHTML = '<div style="padding:12px;opacity:0.6">Ricerca in corso...</div>';
+  gridDiv.innerHTML = '<div style="padding:12px;opacity:0.6">Ricerca in corso su tutti i cataloghi...</div>';
 
   const query = [titleQ ? 'intitle:'+encodeURIComponent(titleQ) : '', authorQ ? 'inauthor:'+encodeURIComponent(authorQ) : ''].filter(Boolean).join('+');
   const queryPlain = [titleQ, authorQ].filter(Boolean).join(' ');
   const results = [];
 
+  // Funzione per aggiornare la griglia progressivamente
+  const renderGrid = () => {
+    if (results.length === 0) return;
+    countDiv.textContent = results.length + ' risultati trovati';
+    window._titleSearchResults = [...results];
+    gridDiv.innerHTML = results.map((res, i) => `
+      <div onclick="selectTitleSearchResult(${i})" style="cursor:pointer;border:1px solid var(--parchment3);border-radius:8px;overflow:hidden;background:var(--parchment);transition:box-shadow .2s" onmouseover="this.style.boxShadow='0 2px 8px rgba(0,0,0,0.15)'" onmouseout="this.style.boxShadow=''">
+        <div style="height:140px;background:#eee;display:flex;align-items:center;justify-content:center;overflow:hidden">
+          ${res.cover ? `<img src="${res.cover}" alt="" style="width:100%;height:100%;object-fit:cover" onerror="this.parentElement.innerHTML='📕'">` : '📕'}
+        </div>
+        <div style="padding:6px">
+          <div style="font-size:11px;font-weight:600;color:var(--ink);overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical">${esc(res.title)}</div>
+          ${res.author ? `<div style="font-size:10px;color:var(--ink-light);margin-top:2px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">${esc(res.author)}</div>` : ''}
+          <div style="font-size:9px;color:var(--leather);margin-top:3px;font-weight:500">${esc(res.source)}</div>
+        </div>
+      </div>`).join('');
+  };
+
+  // Esegui tutte le ricerche in parallelo
+  const searchPromises = [];
+
   // 1. OpenLibrary
-  try {
+  searchPromises.push((async () => { try {
     const params = [];
     if (titleQ) params.push('title=' + encodeURIComponent(titleQ));
     if (authorQ) params.push('author=' + encodeURIComponent(authorQ));
@@ -1491,10 +1512,10 @@ async function searchByTitleAuthor() {
         description: '',
       });
     }
-  } catch(e) {}
+  } catch(e) {} renderGrid(); })());
 
   // 2. Google Books
-  try {
+  searchPromises.push((async () => { try {
     const r = await fetch(`https://www.googleapis.com/books/v1/volumes?q=${query}&maxResults=10`);
     const d = await r.json();
     for (const item of (d.items || []).slice(0, 10)) {
@@ -1514,10 +1535,10 @@ async function searchByTitleAuthor() {
         description: v.description || '',
       });
     }
-  } catch(e) {}
+  } catch(e) {} renderGrid(); })());
 
   // 3. Crossref
-  try {
+  searchPromises.push((async () => { try {
     const q = encodeURIComponent(queryPlain);
     const r = await fetch(`https://api.crossref.org/works?query=${q}&rows=10`, {headers:{'User-Agent':'BibliotecaPrivata/1.0'}});
     const d = await r.json();
@@ -1535,59 +1556,42 @@ async function searchByTitleAuthor() {
         description: '',
       });
     }
-  } catch(e) {}
+  } catch(e) {} renderGrid(); })());
 
   // 4. eBay
-  if (ebayClientId && ebaySecret) try {
-    const credentials = btoa(`${ebayClientId}:${ebaySecret}`);
-    const tr = await fetch(`https://corsproxy.io/?${encodeURIComponent('https://api.ebay.com/identity/v1/oauth2/token')}`, {
-      method:'POST', headers:{'Authorization':`Basic ${credentials}`,'Content-Type':'application/x-www-form-urlencoded'},
-      body:'grant_type=client_credentials&scope=https%3A%2F%2Fapi.ebay.com%2Foauth%2Fapi_scope'
-    });
-    const td = await tr.json();
-    if (td.access_token) {
-      const searchUrl = `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(queryPlain)}&category_ids=267&limit=10`;
-      const sr = await fetch(`https://corsproxy.io/?${encodeURIComponent(searchUrl)}`, {
-        headers:{'Authorization':`Bearer ${td.access_token}`,'X-EBAY-C-MARKETPLACE-ID':'EBAY_IT'}
-      });
-      const sd = await sr.json();
-      for (const item of (sd.itemSummaries || []).slice(0, 10)) {
-        if (!item.title) continue;
-        results.push({
-          title:     item.title,
-          author:    '',
-          publisher: '',
-          year:      '',
-          isbn:      '',
-          cover:     item.image?.imageUrl || '',
-          source:    'eBay',
-          description: '',
+  searchPromises.push((async () => {
+    if (ebayClientId && ebaySecret) {
+      try {
+        const credentials = btoa(`${ebayClientId}:${ebaySecret}`);
+        const tr = await fetch(`https://corsproxy.io/?${encodeURIComponent('https://api.ebay.com/identity/v1/oauth2/token')}`, {
+          method:'POST', headers:{'Authorization':`Basic ${credentials}`,'Content-Type':'application/x-www-form-urlencoded'},
+          body:'grant_type=client_credentials&scope=https%3A%2F%2Fapi.ebay.com%2Foauth%2Fapi_scope'
         });
-      }
+        const td = await tr.json();
+        if (td.access_token) {
+          const searchUrl = `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(queryPlain)}&category_ids=267&limit=10`;
+          const sr = await fetch(`https://corsproxy.io/?${encodeURIComponent(searchUrl)}`, {
+            headers:{'Authorization':`Bearer ${td.access_token}`,'X-EBAY-C-MARKETPLACE-ID':'EBAY_IT'}
+          });
+          const sd = await sr.json();
+          for (const item of (sd.itemSummaries || []).slice(0, 10)) {
+            if (!item.title) continue;
+            results.push({ title:item.title, author:'', publisher:'', year:'', isbn:'', cover:item.image?.imageUrl||'', source:'eBay', description:'' });
+          }
+        }
+      } catch(e) {}
     }
-  } catch(e) {}
+    renderGrid();
+  })());
 
+  // Attendi tutte le fonti e fai render finale
+  await Promise.allSettled(searchPromises);
   if (results.length === 0) {
     gridDiv.innerHTML = '<div style="padding:12px;opacity:0.6">Nessun risultato trovato</div>';
     countDiv.textContent = '';
-    return;
+  } else {
+    renderGrid();
   }
-
-  countDiv.textContent = results.length + ' risultati trovati';
-  gridDiv.innerHTML = results.map((res, i) => `
-    <div onclick="selectTitleSearchResult(${i})" style="cursor:pointer;border:1px solid var(--parchment3);border-radius:8px;overflow:hidden;background:var(--parchment);transition:box-shadow .2s" onmouseover="this.style.boxShadow='0 2px 8px rgba(0,0,0,0.15)'" onmouseout="this.style.boxShadow=''">
-      <div style="height:140px;background:#eee;display:flex;align-items:center;justify-content:center;overflow:hidden">
-        ${res.cover ? `<img src="${res.cover}" alt="" style="width:100%;height:100%;object-fit:cover" onerror="this.parentElement.innerHTML='📕'">` : '📕'}
-      </div>
-      <div style="padding:6px">
-        <div style="font-size:11px;font-weight:600;color:var(--ink);overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical">${esc(res.title)}</div>
-        ${res.author ? `<div style="font-size:10px;color:var(--ink-light);margin-top:2px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">${esc(res.author)}</div>` : ''}
-        <div style="font-size:9px;color:var(--leather);margin-top:3px;font-weight:500">${esc(res.source)}</div>
-      </div>
-    </div>`).join('');
-
-  // Salva results globalmente per selectTitleSearchResult
-  window._titleSearchResults = results;
 }
 
 function selectTitleSearchResult(i) {
