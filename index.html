@@ -283,7 +283,7 @@ textarea.field-input { height:auto; padding:10px 14px; resize:none; line-height:
     <div class="auth-logo">📚</div>
     <div class="auth-title">Biblioteca Privata</div>
     <div class="auth-subtitle" id="auth-subtitle">Il tuo catalogo personale</div>
-    <div style="font-size:11px;color:var(--ink-light);opacity:0.5;text-align:center;margin-top:-20px;margin-bottom:8px">v2.95</div>
+    <div style="font-size:11px;color:var(--ink-light);opacity:0.5;text-align:center;margin-top:-20px;margin-bottom:8px">v2.96</div>
     <div class="divider-gold"></div>
     <div id="auth-setup" style="display:none">
       <label class="field-label">Crea password</label>
@@ -306,7 +306,7 @@ textarea.field-input { height:auto; padding:10px 14px; resize:none; line-height:
 <!-- MAIN -->
 <div id="screen-main">
   <div class="app-header">
-    <span class="header-title">📚 Biblioteca <small style="font-size:11px;opacity:0.6">v2.95</small></span>
+    <span class="header-title">📚 Biblioteca <small style="font-size:11px;opacity:0.6">v2.96</small></span>
     <span class="drive-status" id="drive-status">Drive</span>
     <button class="header-btn" title="Sincronizza" onclick="syncDrive()">☁</button>
     <button class="header-btn" title="Impostazioni" onclick="openSettings()">⚙</button>
@@ -1635,40 +1635,120 @@ async function lookupISSN(issn13) {
   setIsbnStatus('Ricerca ISSN ' + issn8 + '...', '');
   document.getElementById('f-isbn').value = issn13;
 
-  // Prova 1: Crossref journals API (migliore per periodici)
-  try {
+  let found = false;
+  let title = '';
+
+  const fill = (data) => {
+    if (data.title)       { document.getElementById('f-title').value       = data.title;       title = data.title; }
+    if (data.author)      { document.getElementById('f-author').value      = data.author; }
+    if (data.publisher)   { document.getElementById('f-publisher').value   = data.publisher; }
+    if (data.year)        { document.getElementById('f-year').value        = data.year; }
+    if (data.description) { document.getElementById('f-description').value = data.description; }
+  };
+
+  // 1. Crossref journals API
+  if (!found) try {
     const r = await fetch(`https://api.crossref.org/journals/${issn8}`,
       {headers:{'User-Agent':'BibliotecaPrivata/1.0 (mailto:user@example.com)'}});
     if (r.ok) {
       const d = await r.json();
       const j = d.message;
-      if (j && j.title) {
-        document.getElementById('f-title').value     = j.title || '';
-        document.getElementById('f-publisher').value = j.publisher || '';
-        document.getElementById('f-author').value    = '';
-        setIsbnStatus('Trovato (Crossref): ' + j.title, 'ok');
-        return;
+      if (j?.title) { found = true; fill({ title: j.title, publisher: j.publisher || '' }); }
+    }
+  } catch(e) {}
+
+  // 2. Crossref works per ISSN (trova numeri specifici)
+  if (!found) try {
+    const r = await fetch(`https://api.crossref.org/works?filter=issn:${issn8}&rows=1`,
+      {headers:{'User-Agent':'BibliotecaPrivata/1.0 (mailto:user@example.com)'}});
+    if (r.ok) {
+      const d = await r.json();
+      const item = d.message?.items?.[0];
+      if (item?.title?.[0]) {
+        found = true;
+        fill({
+          title:     item['container-title']?.[0] || item.title[0],
+          author:    (item.author||[]).map(a=>[a.given,a.family].filter(Boolean).join(' ')).join(', '),
+          publisher: item.publisher || '',
+          year:      item.published?.['date-parts']?.[0]?.[0] || '',
+        });
       }
     }
   } catch(e) {}
 
-  // Prova 2: Google Books con query ISSN
-  try {
-    const r = await fetch(`https://www.googleapis.com/books/v1/volumes?q=issn:${issn8}&maxResults=1`);
+  // 3. OpenLibrary search per ISSN
+  if (!found) try {
+    const r = await fetch(`https://openlibrary.org/search.json?q=issn:${issn8}&limit=1`);
     const d = await r.json();
-    const item = d.items?.[0]?.volumeInfo;
-    if (item) {
-      document.getElementById('f-title').value     = item.title || '';
-      document.getElementById('f-author').value    = (item.authors||[]).join(', ');
-      document.getElementById('f-publisher').value = item.publisher || '';
-      document.getElementById('f-year').value      = (item.publishedDate||'').slice(0,4);
-      setIsbnStatus('Trovato (Google): ' + item.title, 'ok');
-      return;
+    const doc = d.docs?.[0];
+    if (doc?.title) {
+      found = true;
+      fill({
+        title:     doc.title,
+        author:    (doc.author_name||[]).join(', '),
+        publisher: (doc.publisher||[])[0] || '',
+        year:      doc.first_publish_year || '',
+      });
     }
   } catch(e) {}
 
-  // Nessun risultato
-  setIsbnStatus('ISSN ' + issn8 + ' — rivista/periodico. Compila i dati manualmente.', 'ok');
+  // 4. Google Books con query ISSN
+  if (!found) try {
+    const r = await fetch(`https://www.googleapis.com/books/v1/volumes?q=issn:${issn8}&maxResults=1`);
+    const d = await r.json();
+    const item = d.items?.[0]?.volumeInfo;
+    if (item?.title) {
+      found = true;
+      fill({
+        title:     item.title,
+        author:    (item.authors||[]).join(', '),
+        publisher: item.publisher || '',
+        year:      (item.publishedDate||'').slice(0,4),
+        description: item.description || '',
+      });
+    }
+  } catch(e) {}
+
+  // 5. Barcode Lookup (se chiave presente)
+  if (!found) {
+    const blKey = localStorage.getItem('bp_barcode_key');
+    if (blKey) try {
+      const blUrl = `https://corsproxy.io/?${encodeURIComponent('https://api.barcodelookup.com/v3/products?barcode='+issn13+'&formatted=y&key='+blKey)}`;
+      const r = await fetch(blUrl);
+      if (r.ok) {
+        const d = await r.json();
+        const p = d.products?.[0];
+        if (p?.title) {
+          found = true;
+          fill({ title: p.title, publisher: p.brand || p.manufacturer || '', description: p.description || '' });
+        }
+      }
+    } catch(e) {}
+  }
+
+  // 6. eBay (se chiave presente)
+  if (!found && ebayClientId && ebaySecret) try {
+    const credentials = btoa(`${ebayClientId}:${ebaySecret}`);
+    const tr = await fetch(`https://corsproxy.io/?${encodeURIComponent('https://api.ebay.com/identity/v1/oauth2/token')}`, {
+      method:'POST', headers:{'Authorization':`Basic ${credentials}`,'Content-Type':'application/x-www-form-urlencoded'},
+      body:'grant_type=client_credentials&scope=https%3A%2F%2Fapi.ebay.com%2Foauth%2Fapi_scope'
+    });
+    const td = await tr.json();
+    if (td.access_token) {
+      const sr = await fetch(`https://corsproxy.io/?${encodeURIComponent('https://api.ebay.com/buy/browse/v1/item_summary/search?q='+issn13+'&category_ids=267&limit=3')}`, {
+        headers:{'Authorization':`Bearer ${td.access_token}`,'X-EBAY-C-MARKETPLACE-ID':'EBAY_IT'}
+      });
+      const sd = await sr.json();
+      const item = sd.itemSummaries?.[0];
+      if (item?.title) { found = true; fill({ title: item.title }); }
+    }
+  } catch(e) {}
+
+  if (found) {
+    setIsbnStatus('Trovato: ' + title, 'ok');
+  } else {
+    setIsbnStatus('ISSN ' + issn8 + ' non trovato — inserisci i dati manualmente', 'err');
+  }
 }
 
 // Gestione log ISBN debug (ultime 3 ricerche)
