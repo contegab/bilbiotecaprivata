@@ -283,7 +283,7 @@ textarea.field-input { height:auto; padding:10px 14px; resize:none; line-height:
     <div class="auth-logo">📚</div>
     <div class="auth-title">Biblioteca Privata</div>
     <div class="auth-subtitle" id="auth-subtitle">Il tuo catalogo personale</div>
-    <div style="font-size:11px;color:var(--ink-light);opacity:0.5;text-align:center;margin-top:-20px;margin-bottom:8px">v3.20</div>
+    <div style="font-size:11px;color:var(--ink-light);opacity:0.5;text-align:center;margin-top:-20px;margin-bottom:8px">v3.2-debug0</div>
     <div class="divider-gold"></div>
     <div id="auth-setup" style="display:none">
       <label class="field-label">Crea password</label>
@@ -306,7 +306,7 @@ textarea.field-input { height:auto; padding:10px 14px; resize:none; line-height:
 <!-- MAIN -->
 <div id="screen-main">
   <div class="app-header">
-    <span class="header-title">📚 Biblioteca <small style="font-size:11px;opacity:0.6">v3.20</small></span>
+    <span class="header-title">📚 Biblioteca <small style="font-size:11px;opacity:0.6">v3.2-debug0</small></span>
     <span class="drive-status" id="drive-status">Drive</span>
     <button class="header-btn" title="Sincronizza" onclick="syncDrive()">☁</button>
     <button class="header-btn" title="Impostazioni" onclick="openSettings()">⚙</button>
@@ -1492,6 +1492,7 @@ async function searchByTitleAuthor() {
     if (authorQ) params.push('author=' + encodeURIComponent(authorQ));
     const r = await fetch('https://openlibrary.org/search.json?' + params.join('&') + '&limit=10');
     const d = await r.json();
+    toast('OL: ' + (d.docs?.length||0) + ' risultati');
     (d.docs||[]).slice(0,10).filter(x=>x.title).forEach(doc => {
       allResults.push({
         title: doc.title, author: (doc.author_name||[]).join(', '),
@@ -1502,12 +1503,13 @@ async function searchByTitleAuthor() {
       });
     });
     renderGrid();
-  } catch(e) {}
+  } catch(e) { toast('OL errore: ' + e.message); }
 
   // Google Books
   try {
     const r = await fetch('https://www.googleapis.com/books/v1/volumes?q=' + gbQuery + '&maxResults=10');
     const d = await r.json();
+    toast('GB: ' + (d.items?.length||0) + ' risultati, status=' + r.status);
     (d.items||[]).slice(0,10).filter(x=>x.volumeInfo?.title).forEach(item => {
       const v = item.volumeInfo, il = v.imageLinks||{};
       const isbn = v.industryIdentifiers?.find(x=>x.type==='ISBN_13')?.identifier || v.industryIdentifiers?.find(x=>x.type==='ISBN_10')?.identifier || '';
@@ -1520,12 +1522,13 @@ async function searchByTitleAuthor() {
       });
     });
     renderGrid();
-  } catch(e) {}
+  } catch(e) { toast('GB errore: ' + e.message); }
 
   // Crossref
   try {
     const r = await fetch('https://api.crossref.org/works?query=' + encodeURIComponent(queryPlain) + '&rows=10', {headers:{'User-Agent':'BibliotecaPrivata/1.0'}});
     const d = await r.json();
+    toast('CR: ' + (d.message?.items?.length||0) + ' risultati');
     (d.message?.items||[]).slice(0,10).filter(x=>x.title?.[0]).forEach(item => {
       const isbn = item.ISBN?.[0]||'';
       allResults.push({
@@ -1537,7 +1540,7 @@ async function searchByTitleAuthor() {
       });
     });
     renderGrid();
-  } catch(e) {}
+  } catch(e) { toast('CR errore: ' + e.message); }
 
   // eBay
   if (ebayClientId && ebaySecret) try {
