@@ -283,7 +283,7 @@ textarea.field-input { height:auto; padding:10px 14px; resize:none; line-height:
     <div class="auth-logo">📚</div>
     <div class="auth-title">Biblioteca Privata</div>
     <div class="auth-subtitle" id="auth-subtitle">Il tuo catalogo personale</div>
-    <div style="font-size:11px;color:var(--ink-light);opacity:0.5;text-align:center;margin-top:-20px;margin-bottom:8px">v2.98</div>
+    <div style="font-size:11px;color:var(--ink-light);opacity:0.5;text-align:center;margin-top:-20px;margin-bottom:8px">v2.99</div>
     <div class="divider-gold"></div>
     <div id="auth-setup" style="display:none">
       <label class="field-label">Crea password</label>
@@ -306,7 +306,7 @@ textarea.field-input { height:auto; padding:10px 14px; resize:none; line-height:
 <!-- MAIN -->
 <div id="screen-main">
   <div class="app-header">
-    <span class="header-title">📚 Biblioteca <small style="font-size:11px;opacity:0.6">v2.98</small></span>
+    <span class="header-title">📚 Biblioteca <small style="font-size:11px;opacity:0.6">v2.99</small></span>
     <span class="drive-status" id="drive-status">Drive</span>
     <button class="header-btn" title="Sincronizza" onclick="syncDrive()">☁</button>
     <button class="header-btn" title="Impostazioni" onclick="openSettings()">⚙</button>
@@ -1462,20 +1462,106 @@ async function searchByTitleAuthor() {
   const countDiv   = document.getElementById('title-search-count');
   resultsDiv.style.display = 'block';
   gridDiv.innerHTML = '<div style="padding:12px;opacity:0.6">Ricerca in corso su tutti i cataloghi...</div>';
+  countDiv.textContent = '';
 
-  const query = [titleQ ? 'intitle:'+encodeURIComponent(titleQ) : '', authorQ ? 'inauthor:'+encodeURIComponent(authorQ) : ''].filter(Boolean).join('+');
   const queryPlain = [titleQ, authorQ].filter(Boolean).join(' ');
-  const results = [];
+  const gbQuery    = [titleQ ? 'intitle:'+encodeURIComponent(titleQ) : '', authorQ ? 'inauthor:'+encodeURIComponent(authorQ) : ''].filter(Boolean).join('+');
 
-  // Funzione per aggiornare la griglia progressivamente
-  const renderGrid = () => {
-    if (results.length === 0) return;
-    countDiv.textContent = results.length + ' risultati trovati';
-    window._titleSearchResults = [...results];
-    gridDiv.innerHTML = results.map((res, i) => `
+  // Ogni fonte raccoglie i propri risultati e li restituisce
+  async function searchOpenLibrary() {
+    try {
+      const params = [];
+      if (titleQ) params.push('title=' + encodeURIComponent(titleQ));
+      if (authorQ) params.push('author=' + encodeURIComponent(authorQ));
+      const r = await fetch(`https://openlibrary.org/search.json?${params.join('&')}&limit=10`);
+      const d = await r.json();
+      return (d.docs || []).slice(0,10).filter(doc=>doc.title).map(doc => ({
+        title:     doc.title,
+        author:    (doc.author_name||[]).join(', '),
+        publisher: (doc.publisher||[])[0]||'',
+        year:      doc.first_publish_year||'',
+        isbn:      doc.isbn?.[0]||'',
+        cover:     doc.cover_i ? `https://covers.openlibrary.org/b/id/${doc.cover_i}-M.jpg` : (doc.isbn?.[0] ? `https://covers.openlibrary.org/b/isbn/${doc.isbn[0]}-M.jpg` : ''),
+        source:    'OpenLibrary',
+        description: '',
+      }));
+    } catch(e) { return []; }
+  }
+
+  async function searchGoogleBooks() {
+    try {
+      const r = await fetch(`https://www.googleapis.com/books/v1/volumes?q=${gbQuery}&maxResults=10`);
+      const d = await r.json();
+      return (d.items||[]).slice(0,10).filter(item=>item.volumeInfo?.title).map(item => {
+        const v  = item.volumeInfo;
+        const il = v.imageLinks||{};
+        const isbn = v.industryIdentifiers?.find(x=>x.type==='ISBN_13')?.identifier || v.industryIdentifiers?.find(x=>x.type==='ISBN_10')?.identifier || '';
+        return {
+          title:     v.title,
+          author:    (v.authors||[]).join(', '),
+          publisher: v.publisher||'',
+          year:      (v.publishedDate||'').slice(0,4),
+          isbn,
+          cover:     (il.large||il.medium||il.thumbnail||'').replace('http://','https://'),
+          source:    'Google Books',
+          description: v.description||'',
+        };
+      });
+    } catch(e) { return []; }
+  }
+
+  async function searchCrossref() {
+    try {
+      const r = await fetch(`https://api.crossref.org/works?query=${encodeURIComponent(queryPlain)}&rows=10`, {headers:{'User-Agent':'BibliotecaPrivata/1.0'}});
+      const d = await r.json();
+      return (d.message?.items||[]).slice(0,10).filter(item=>item.title?.[0]).map(item => {
+        const isbn = item.ISBN?.[0]||'';
+        return {
+          title:     item.title[0],
+          author:    (item.author||[]).map(a=>[a.given,a.family].filter(Boolean).join(' ')).join(', '),
+          publisher: item.publisher||'',
+          year:      item.published?.['date-parts']?.[0]?.[0]||'',
+          isbn,
+          cover:     isbn ? `https://covers.openlibrary.org/b/isbn/${isbn}-M.jpg` : '',
+          source:    'Crossref',
+          description: '',
+        };
+      });
+    } catch(e) { return []; }
+  }
+
+  async function searchEbay() {
+    if (!ebayClientId || !ebaySecret) return [];
+    try {
+      const credentials = btoa(`${ebayClientId}:${ebaySecret}`);
+      const tr = await fetch(`https://corsproxy.io/?${encodeURIComponent('https://api.ebay.com/identity/v1/oauth2/token')}`, {
+        method:'POST', headers:{'Authorization':`Basic ${credentials}`,'Content-Type':'application/x-www-form-urlencoded'},
+        body:'grant_type=client_credentials&scope=https%3A%2F%2Fapi.ebay.com%2Foauth%2Fapi_scope'
+      });
+      const td = await tr.json();
+      if (!td.access_token) return [];
+      const searchUrl = `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(queryPlain)}&category_ids=267&limit=10`;
+      const sr = await fetch(`https://corsproxy.io/?${encodeURIComponent(searchUrl)}`, {
+        headers:{'Authorization':`Bearer ${td.access_token}`,'X-EBAY-C-MARKETPLACE-ID':'EBAY_IT'}
+      });
+      const sd = await sr.json();
+      return (sd.itemSummaries||[]).slice(0,10).filter(item=>item.title).map(item => ({
+        title: item.title, author:'', publisher:'', year:'', isbn:'',
+        cover: item.image?.imageUrl||'', source:'eBay', description:'',
+      }));
+    } catch(e) { return []; }
+  }
+
+  // Esegui in parallelo, mostra progressivamente
+  const allResults = [];
+  const updateGrid = () => {
+    if (allResults.length === 0) return;
+    window._titleSearchResults = [...allResults];
+    countDiv.textContent = allResults.length + ' risultati trovati';
+    gridDiv.innerHTML = allResults.map((res, i) => `
       <div onclick="selectTitleSearchResult(${i})" style="cursor:pointer;border:1px solid var(--parchment3);border-radius:8px;overflow:hidden;background:var(--parchment);transition:box-shadow .2s" onmouseover="this.style.boxShadow='0 2px 8px rgba(0,0,0,0.15)'" onmouseout="this.style.boxShadow=''">
-        <div style="height:140px;background:#eee;display:flex;align-items:center;justify-content:center;overflow:hidden">
-          ${res.cover ? `<img src="${res.cover}" alt="" style="width:100%;height:100%;object-fit:cover" onerror="this.parentElement.innerHTML='📕'">` : '📕'}
+        <div style="height:140px;background:#eee;display:flex;align-items:center;justify-content:center;overflow:hidden;font-size:40px">
+          ${res.cover ? `<img src="${res.cover}" alt="" style="width:100%;height:100%;object-fit:cover" onerror="this.style.display='none';this.parentElement.innerHTML='📕'">` : '📕'}
         </div>
         <div style="padding:6px">
           <div style="font-size:11px;font-weight:600;color:var(--ink);overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical">${esc(res.title)}</div>
@@ -1485,114 +1571,23 @@ async function searchByTitleAuthor() {
       </div>`).join('');
   };
 
-  // Esegui tutte le ricerche in parallelo
-  const searchPromises = [];
+  const promises = [
+    searchOpenLibrary().then(r => { allResults.push(...r); updateGrid(); }),
+    searchGoogleBooks().then(r => { allResults.push(...r); updateGrid(); }),
+    searchCrossref().then(r => { allResults.push(...r); updateGrid(); }),
+    searchEbay().then(r => { allResults.push(...r); updateGrid(); }),
+  ];
 
-  // 1. OpenLibrary
-  searchPromises.push((async () => { try {
-    const params = [];
-    if (titleQ) params.push('title=' + encodeURIComponent(titleQ));
-    if (authorQ) params.push('author=' + encodeURIComponent(authorQ));
-    const r = await fetch(`https://openlibrary.org/search.json?${params.join('&')}&limit=10`);
-    const d = await r.json();
-    for (const doc of (d.docs || []).slice(0, 10)) {
-      if (!doc.title) continue;
-      const isbn = doc.isbn?.[0] || '';
-      const coverUrl = doc.cover_i
-        ? `https://covers.openlibrary.org/b/id/${doc.cover_i}-M.jpg`
-        : (isbn ? `https://covers.openlibrary.org/b/isbn/${isbn}-M.jpg` : '');
-      results.push({
-        title:     doc.title,
-        author:    (doc.author_name || []).join(', '),
-        publisher: (doc.publisher || [])[0] || '',
-        year:      doc.first_publish_year || '',
-        isbn:      isbn,
-        cover:     coverUrl,
-        source:    'OpenLibrary',
-        description: '',
-      });
-    }
-  } catch(e) {} renderGrid(); })());
+  await Promise.allSettled(promises);
 
-  // 2. Google Books
-  searchPromises.push((async () => { try {
-    const r = await fetch(`https://www.googleapis.com/books/v1/volumes?q=${query}&maxResults=10`);
-    const d = await r.json();
-    for (const item of (d.items || []).slice(0, 10)) {
-      const v = item.volumeInfo;
-      if (!v?.title) continue;
-      const isbn = v.industryIdentifiers?.find(x=>x.type==='ISBN_13')?.identifier || v.industryIdentifiers?.find(x=>x.type==='ISBN_10')?.identifier || '';
-      const il = v.imageLinks || {};
-      const cover = (il.large || il.medium || il.thumbnail || '').replace('http://','https://');
-      results.push({
-        title:     v.title,
-        author:    (v.authors || []).join(', '),
-        publisher: v.publisher || '',
-        year:      (v.publishedDate || '').slice(0,4),
-        isbn,
-        cover,
-        source:    'Google Books',
-        description: v.description || '',
-      });
-    }
-  } catch(e) {} renderGrid(); })());
-
-  // 3. Crossref
-  searchPromises.push((async () => { try {
-    const q = encodeURIComponent(queryPlain);
-    const r = await fetch(`https://api.crossref.org/works?query=${q}&rows=10`, {headers:{'User-Agent':'BibliotecaPrivata/1.0'}});
-    const d = await r.json();
-    for (const item of (d.message?.items || []).slice(0, 10)) {
-      if (!item.title?.[0]) continue;
-      const isbn = item.ISBN?.[0] || '';
-      results.push({
-        title:     item.title[0],
-        author:    (item.author||[]).map(a=>[a.given,a.family].filter(Boolean).join(' ')).join(', '),
-        publisher: item.publisher || '',
-        year:      item.published?.['date-parts']?.[0]?.[0] || '',
-        isbn,
-        cover:     isbn ? `https://covers.openlibrary.org/b/isbn/${isbn}-M.jpg` : '',
-        source:    'Crossref',
-        description: '',
-      });
-    }
-  } catch(e) {} renderGrid(); })());
-
-  // 4. eBay
-  searchPromises.push((async () => {
-    if (ebayClientId && ebaySecret) {
-      try {
-        const credentials = btoa(`${ebayClientId}:${ebaySecret}`);
-        const tr = await fetch(`https://corsproxy.io/?${encodeURIComponent('https://api.ebay.com/identity/v1/oauth2/token')}`, {
-          method:'POST', headers:{'Authorization':`Basic ${credentials}`,'Content-Type':'application/x-www-form-urlencoded'},
-          body:'grant_type=client_credentials&scope=https%3A%2F%2Fapi.ebay.com%2Foauth%2Fapi_scope'
-        });
-        const td = await tr.json();
-        if (td.access_token) {
-          const searchUrl = `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(queryPlain)}&category_ids=267&limit=10`;
-          const sr = await fetch(`https://corsproxy.io/?${encodeURIComponent(searchUrl)}`, {
-            headers:{'Authorization':`Bearer ${td.access_token}`,'X-EBAY-C-MARKETPLACE-ID':'EBAY_IT'}
-          });
-          const sd = await sr.json();
-          for (const item of (sd.itemSummaries || []).slice(0, 10)) {
-            if (!item.title) continue;
-            results.push({ title:item.title, author:'', publisher:'', year:'', isbn:'', cover:item.image?.imageUrl||'', source:'eBay', description:'' });
-          }
-        }
-      } catch(e) {}
-    }
-    renderGrid();
-  })());
-
-  // Attendi tutte le fonti e fai render finale
-  await Promise.allSettled(searchPromises);
-  if (results.length === 0) {
+  if (allResults.length === 0) {
     gridDiv.innerHTML = '<div style="padding:12px;opacity:0.6">Nessun risultato trovato</div>';
     countDiv.textContent = '';
   } else {
-    renderGrid();
+    updateGrid();
   }
 }
+
 
 function selectTitleSearchResult(i) {
   const res = window._titleSearchResults?.[i];
