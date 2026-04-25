@@ -283,7 +283,7 @@ textarea.field-input { height:auto; padding:10px 14px; resize:none; line-height:
     <div class="auth-logo">📚</div>
     <div class="auth-title">Biblioteca Privata</div>
     <div class="auth-subtitle" id="auth-subtitle">Il tuo catalogo personale</div>
-    <div style="font-size:11px;color:var(--ink-light);opacity:0.5;text-align:center;margin-top:-20px;margin-bottom:8px">v2.87</div>
+    <div style="font-size:11px;color:var(--ink-light);opacity:0.5;text-align:center;margin-top:-20px;margin-bottom:8px">v2.88</div>
     <div class="divider-gold"></div>
     <div id="auth-setup" style="display:none">
       <label class="field-label">Crea password</label>
@@ -306,7 +306,7 @@ textarea.field-input { height:auto; padding:10px 14px; resize:none; line-height:
 <!-- MAIN -->
 <div id="screen-main">
   <div class="app-header">
-    <span class="header-title">📚 Biblioteca <small style="font-size:11px;opacity:0.6">v2.87</small></span>
+    <span class="header-title">📚 Biblioteca <small style="font-size:11px;opacity:0.6">v2.88</small></span>
     <span class="drive-status" id="drive-status">Drive</span>
     <button class="header-btn" title="Sincronizza" onclick="syncDrive()">☁</button>
     <button class="header-btn" title="Impostazioni" onclick="openSettings()">⚙</button>
@@ -501,6 +501,21 @@ textarea.field-input { height:auto; padding:10px 14px; resize:none; line-height:
     </div>
     <div class="panel-body">
 
+      <!-- EBAY API -->
+      <div class="settings-section-title">🛒 eBay API</div>
+      <div class="form-group">
+        <label class="field-label">Client ID <small style="opacity:0.6">(App ID — opzionale)</small></label>
+        <input class="field-input" type="password" id="s-ebay-clientid" placeholder="es. NOME-App-PRD-..." autocomplete="off">
+        <label class="field-label" style="margin-top:8px">Client Secret <small style="opacity:0.6">(Cert ID — opzionale)</small></label>
+        <input class="field-input" type="password" id="s-ebay-secret" placeholder="es. PRD-..." autocomplete="off">
+        <div style="font-size:11px;opacity:0.6;margin-top:3px">Migliora la ricerca per libri italiani. 5000 chiamate/giorno.</div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button class="btn-secondary" onclick="saveEbayKeys()">Salva chiavi</button>
+          <button class="btn-secondary" onclick="testEbayKeys()">🔬 Testa</button>
+        </div>
+        <div id="ebay-key-status" style="font-size:12px;margin-top:6px"></div>
+      </div>
+
       <!-- BARCODE LOOKUP -->
       <div class="settings-section-title">🔍 Barcode Lookup API</div>
       <div class="form-group">
@@ -613,6 +628,8 @@ let clientId      = '';
 let clientSecret  = '';
 let refreshToken  = '';
 let credsFileName = ''; // nome file credentials.json caricato
+let ebayClientId  = ''; // eBay App ID
+let ebaySecret    = ''; // eBay Cert ID
 let driveUserEmail = ''; // email account Google connesso
 let driveFolderId = null;
 let driveFileId   = null;
@@ -673,7 +690,7 @@ async function decryptStr(key, ciphertext) {
 async function saveSecureData(clientId, clientSecret, refreshToken) {
   if (!sessionKey) return;
   const barcodeKey = localStorage.getItem('bp_barcode_key') || '';
-  const payload = JSON.stringify({ clientId, clientSecret, refreshToken, barcodeKey });
+  const payload = JSON.stringify({ clientId, clientSecret, refreshToken, barcodeKey, ebayClientId, ebaySecret });
   const cipher  = await encryptStr(sessionKey, payload);
   localStorage.setItem('bp_secure', cipher);
 }
@@ -697,6 +714,8 @@ async function loadSecureData() {
     if (obj.barcodeKey) {
       localStorage.setItem('bp_barcode_key', obj.barcodeKey);
     }
+    if (obj.ebayClientId) ebayClientId = obj.ebayClientId;
+    if (obj.ebaySecret)   ebaySecret   = obj.ebaySecret;
     // Se non era in bp_secure ma è già in localStorage (versioni precedenti), OK
   } catch {
     console.warn('Impossibile decifrare credenziali');
@@ -1933,6 +1952,42 @@ async function lookupIsbn() {
     } catch(e) { _dbg('Crossref errore: ' + e.message); }
   }
 
+  // ── 8. eBay Browse API ────────────────────────────────────────────────
+  if (!found && ebayClientId && ebaySecret) {
+    try {
+      // 1. Ottieni access token
+      const credentials = btoa(`${ebayClientId}:${ebaySecret}`);
+      const tokenUrl = 'https://api.ebay.com/identity/v1/oauth2/token';
+      const tr = await fetch(`https://corsproxy.io/?${encodeURIComponent(tokenUrl)}`, {
+        method: 'POST',
+        headers: { 'Authorization': `Basic ${credentials}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'grant_type=client_credentials&scope=https%3A%2F%2Fapi.ebay.com%2Foauth%2Fapi_scope'
+      });
+      const td = await tr.json();
+      if (td.access_token) {
+        // 2. Cerca per ISBN
+        const searchUrl = `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${isbn}&category_ids=267&limit=3&fieldgroups=MATCHING_ITEMS`;
+        const sr = await fetch(`https://corsproxy.io/?${encodeURIComponent(searchUrl)}`, {
+          headers: { 'Authorization': `Bearer ${td.access_token}`, 'X-EBAY-C-MARKETPLACE-ID': 'EBAY_IT' }
+        });
+        const sd = await sr.json();
+        const item = sd.itemSummaries?.[0];
+        if (item?.title) {
+          found = true;
+          fill({
+            title:     item.title,
+            author:    '',
+            publisher: '',
+            year:      '',
+            description: '',
+          });
+          if (item.image?.imageUrl) gbCoverUrl = item.image.imageUrl;
+          _dbg('eBay: trovato ' + item.title);
+        }
+      }
+    } catch(e) { _dbg('eBay errore: ' + e.message); }
+  }
+
   _dbg('Risultato finale: found=' + found);
   saveIsbnDebugLog(isbn, _dbgLines.join('\n'));
   renderIsbnLogs();
@@ -2255,6 +2310,7 @@ async function readBarcodeFromFile(input){
 //  IMPOSTAZIONI
 // ═══════════════════════════════════
 async function openSettings() {
+  loadEbayKeys();
   loadBarcodeLookupKey();
   renderIsbnLogs();
   // Recupera email Google se connesso ma non ancora in cache
@@ -2360,6 +2416,56 @@ function convertISBN13to10(isbn13) {
   for (let i = 0; i < 9; i++) sum += (10 - i) * parseInt(core[i]);
   const check = (11 - (sum % 11)) % 11;
   return core + (check === 10 ? 'X' : String(check));
+}
+
+async function saveEbayKeys() {
+  const cid = document.getElementById('s-ebay-clientid').value.trim();
+  const sec = document.getElementById('s-ebay-secret').value.trim();
+  ebayClientId = cid;
+  ebaySecret   = sec;
+  await saveSecureData(clientId, clientSecret, refreshToken);
+  document.getElementById('ebay-key-status').innerHTML = 
+    cid ? '<span style="color:var(--green)">✓ Chiavi eBay salvate</span>' 
+        : '<span style="color:var(--red)">✗ Chiavi rimosse</span>';
+  toast(cid ? 'Chiavi eBay salvate' : 'Chiavi eBay rimosse');
+}
+
+async function testEbayKeys() {
+  const cid = document.getElementById('s-ebay-clientid').value.trim() || ebayClientId;
+  const sec = document.getElementById('s-ebay-secret').value.trim() || ebaySecret;
+  const statusEl = document.getElementById('ebay-key-status');
+  if (!cid || !sec) { statusEl.innerHTML = '<span style="color:var(--gold)">⚠ Inserisci Client ID e Client Secret</span>'; return; }
+  statusEl.innerHTML = '<span style="color:var(--ink-light)">⏳ Test in corso...</span>';
+  try {
+    const credentials = btoa(`${cid}:${sec}`);
+    const tokenUrl = 'https://api.ebay.com/identity/v1/oauth2/token';
+    const r = await fetch(`https://corsproxy.io/?${encodeURIComponent(tokenUrl)}`, {
+      method: 'POST',
+      headers: { 'Authorization': `Basic ${credentials}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'grant_type=client_credentials&scope=https%3A%2F%2Fapi.ebay.com%2Foauth%2Fapi_scope'
+    });
+    const d = await r.json();
+    if (d.access_token) {
+      statusEl.innerHTML = '<span style="color:var(--green)">✓ Chiavi valide — eBay API attiva</span>';
+    } else {
+      statusEl.innerHTML = '<span style="color:var(--red)">✗ Chiavi non valide: ' + (d.error_description || d.error || 'errore') + '</span>';
+    }
+  } catch(e) {
+    statusEl.innerHTML = '<span style="color:var(--gold)">⚠ Errore di rete: ' + e.message + '</span>';
+  }
+}
+
+function loadEbayKeys() {
+  const el1 = document.getElementById('s-ebay-clientid');
+  const el2 = document.getElementById('s-ebay-secret');
+  const statusEl = document.getElementById('ebay-key-status');
+  if (el1) el1.placeholder = ebayClientId ? '••••••••••••••••••••' : 'es. NOME-App-PRD-...';
+  if (el2) el2.placeholder = ebaySecret   ? '••••••••••••••••••••' : 'es. PRD-...';
+  if (statusEl) {
+    statusEl.innerHTML = ebayClientId
+      ? '<span style="color:var(--green)">✓ Chiavi presenti (' + ebayClientId.slice(0,8) + '...)</span>'
+      : '<span style="color:var(--red)">✗ Nessuna chiave configurata</span>';
+  }
 }
 
 async function saveBarcodeLookupKey() {
