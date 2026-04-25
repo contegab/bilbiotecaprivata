@@ -283,7 +283,7 @@ textarea.field-input { height:auto; padding:10px 14px; resize:none; line-height:
     <div class="auth-logo">📚</div>
     <div class="auth-title">Biblioteca Privata</div>
     <div class="auth-subtitle" id="auth-subtitle">Il tuo catalogo personale</div>
-    <div style="font-size:11px;color:var(--ink-light);opacity:0.5;text-align:center;margin-top:-20px;margin-bottom:8px">v3.2-debug0</div>
+    <div style="font-size:11px;color:var(--ink-light);opacity:0.5;text-align:center;margin-top:-20px;margin-bottom:8px">v3.40</div>
     <div class="divider-gold"></div>
     <div id="auth-setup" style="display:none">
       <label class="field-label">Crea password</label>
@@ -306,7 +306,7 @@ textarea.field-input { height:auto; padding:10px 14px; resize:none; line-height:
 <!-- MAIN -->
 <div id="screen-main">
   <div class="app-header">
-    <span class="header-title">📚 Biblioteca <small style="font-size:11px;opacity:0.6">v3.2-debug0</small></span>
+    <span class="header-title">📚 Biblioteca <small style="font-size:11px;opacity:0.6">v3.40</small></span>
     <span class="drive-status" id="drive-status">Drive</span>
     <button class="header-btn" title="Sincronizza" onclick="syncDrive()">☁</button>
     <button class="header-btn" title="Impostazioni" onclick="openSettings()">⚙</button>
@@ -728,8 +728,11 @@ async function loadSecureData() {
     if (obj.barcodeKey) {
       localStorage.setItem('bp_barcode_key', obj.barcodeKey);
     }
-    if (obj.ebayClientId) ebayClientId = obj.ebayClientId;
-    if (obj.ebaySecret)   ebaySecret   = obj.ebaySecret;
+    if (obj.ebayClientId) { ebayClientId = obj.ebayClientId; localStorage.setItem('bp_ebay_cid', ebayClientId); }
+    if (obj.ebaySecret)   { ebaySecret   = obj.ebaySecret;   localStorage.setItem('bp_ebay_sec', ebaySecret); }
+    // Fallback da localStorage se non in bp_secure
+    if (!ebayClientId) ebayClientId = localStorage.getItem('bp_ebay_cid') || '';
+    if (!ebaySecret)   ebaySecret   = localStorage.getItem('bp_ebay_sec') || '';
     // Se non era in bp_secure ma è già in localStorage (versioni precedenti), OK
   } catch {
     console.warn('Impossibile decifrare credenziali');
@@ -795,6 +798,9 @@ async function enterApp() {
   loadBooksFromLocal();
   applyFilters();
   updateStats();
+  // Carica chiavi eBay da cache locale (disponibili subito)
+  if (!ebayClientId) ebayClientId = localStorage.getItem('bp_ebay_cid') || '';
+  if (!ebaySecret)   ebaySecret   = localStorage.getItem('bp_ebay_sec') || '';
   // Carica credenziali cifrate (include email da cache)
   await loadSecureData();
   updateCredsStatus();
@@ -921,6 +927,7 @@ async function disconnectDrive() {
   const ok = await showConfirm('Disconnetti Drive', 'Rimuovi le credenziali Google Drive salvate? Dovrai ricaricare il credentials.json e riautorizzare.');
   if (!ok) return;
   clientId = ''; clientSecret = ''; refreshToken = ''; driveUserEmail = ''; credsFileName = '';
+  ebayClientId = ''; ebaySecret = '';
   localStorage.removeItem('bp_drive_email');
   driveFolderId = null; driveFileId = null; accessToken = null; tokenExpiry = 0;
   localStorage.removeItem('bp_rt_cache');
@@ -1168,19 +1175,22 @@ async function syncDrive() {
 //  BACKUP ROTANTE (3 slot)
 // ═══════════════════════════════════
 function pushBackup() {
-  // Rotazione FIFO: 2←1, 1←0, 0←nuovo
-  for (let i = MAX_BACKUPS - 1; i > 0; i--) {
-    const prev = localStorage.getItem(`bp_backup_${i-1}`);
-    if (prev) localStorage.setItem(`bp_backup_${i}`, prev);
-    else      localStorage.removeItem(`bp_backup_${i}`);
-  }
-  // Slot 0 = backup più recente
-  const entry = {
-    date:  new Date().toISOString(),
-    count: allBooks.length,
-    books: JSON.parse(JSON.stringify(allBooks)), // copia profonda
-  };
-  localStorage.setItem('bp_backup_0', JSON.stringify(entry));
+  try {
+    // Rotazione FIFO senza cover_data per risparmiare spazio localStorage
+    for (let i = MAX_BACKUPS - 1; i > 0; i--) {
+      const prev = localStorage.getItem(`bp_backup_${i-1}`);
+      if (prev) { try { localStorage.setItem(`bp_backup_${i}`, prev); } catch(e) {} }
+      else localStorage.removeItem(`bp_backup_${i}`);
+    }
+    // Slot 0 = backup più recente — senza copertine base64
+    const slim = allBooks.map(b => { const {cover_data, ...rest} = b; return rest; });
+    const entry = { date: new Date().toISOString(), count: allBooks.length, books: slim };
+    try {
+      localStorage.setItem('bp_backup_0', JSON.stringify(entry));
+    } catch(e) {
+      console.warn('Backup locale non salvato: spazio insufficiente');
+    }
+  } catch(e) { console.warn('pushBackup errore:', e); }
 }
 
 function renderBackupSlots() {
@@ -1623,34 +1633,34 @@ async function selectTitleSearchResult(i) {
         // Log aspetti per debug
         console.log('eBay aspects:', aspects.map(a=>a.name+'='+a.value).join(', '));
 
-        const findAspect = (...keys) => aspects.find(a => keys.some(k => a.name?.toLowerCase().includes(k)));
+        const findA = (...keys) => aspects.find(a => keys.some(k => a.name?.toLowerCase().includes(k)));
 
         // ISBN/EAN
-        const isbnA = findAspect('isbn','ean','codice');
+        const isbnA = findA('isbn','ean','codice');
         if (isbnA?.value && !document.getElementById('f-isbn').value)
           document.getElementById('f-isbn').value = isbnA.value.replace(/[^0-9X]/gi,'');
         // Autore
-        const authorA = findAspect('autore','author','scrittore');
+        const authorA = findA('autore','author');
         if (authorA?.value && !document.getElementById('f-author').value)
           document.getElementById('f-author').value = authorA.value;
         // Editore
-        const pubA = findAspect('editore','publisher','casa editrice','editori');
+        const pubA = findA('editore','publisher');
         if (pubA?.value && !document.getElementById('f-publisher').value)
           document.getElementById('f-publisher').value = pubA.value;
-        // Anno
-        const yearA = findAspect('anno','year','data di pubblicazione','pubblicazione');
+        // Anno di pubblicazione
+        const yearA = findA('anno di pubblicazione','anno','year');
         if (yearA?.value && !document.getElementById('f-year').value)
           document.getElementById('f-year').value = yearA.value.replace(/[^0-9]/g,'').slice(0,4);
         // Pagine
-        const pagesA = findAspect('pagine','pages','numero di pagine','lunghezza');
+        const pagesA = findA('numero di pagine','pagine','pages');
         if (pagesA?.value && !document.getElementById('f-pages').value)
           document.getElementById('f-pages').value = pagesA.value.replace(/[^0-9]/g,'');
         // Lingua
-        const langA = findAspect('lingua','language','idioma');
+        const langA = findA('lingua','language');
         if (langA?.value && !document.getElementById('f-language').value)
           document.getElementById('f-language').value = langA.value;
-        // Genere
-        const genreA = findAspect('genere','genre','soggetto','categoria','argomento');
+        // Genere/Soggetto
+        const genreA = findA('genere','soggetto','argomento','genre');
         if (genreA?.value) {
           const genreEl = document.getElementById('f-genre');
           if (genreEl && !genreEl.value) genreEl.value = genreA.value;
@@ -2755,6 +2765,11 @@ async function saveEbayKeys() {
   const sec = document.getElementById('s-ebay-secret').value.trim();
   ebayClientId = cid;
   ebaySecret   = sec;
+  // Salva anche in localStorage per accesso immediato
+  if (cid) localStorage.setItem('bp_ebay_cid', cid);
+  else localStorage.removeItem('bp_ebay_cid');
+  if (sec) localStorage.setItem('bp_ebay_sec', sec);
+  else localStorage.removeItem('bp_ebay_sec');
   await saveSecureData(clientId, clientSecret, refreshToken);
   document.getElementById('ebay-key-status').innerHTML = 
     cid ? '<span style="color:var(--green)">✓ Chiavi eBay salvate</span>' 
