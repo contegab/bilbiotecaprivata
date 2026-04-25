@@ -283,7 +283,7 @@ textarea.field-input { height:auto; padding:10px 14px; resize:none; line-height:
     <div class="auth-logo">📚</div>
     <div class="auth-title">Biblioteca Privata</div>
     <div class="auth-subtitle" id="auth-subtitle">Il tuo catalogo personale</div>
-    <div style="font-size:11px;color:var(--ink-light);opacity:0.5;text-align:center;margin-top:-20px;margin-bottom:8px">v3.00</div>
+    <div style="font-size:11px;color:var(--ink-light);opacity:0.5;text-align:center;margin-top:-20px;margin-bottom:8px">v3.10</div>
     <div class="divider-gold"></div>
     <div id="auth-setup" style="display:none">
       <label class="field-label">Crea password</label>
@@ -306,7 +306,7 @@ textarea.field-input { height:auto; padding:10px 14px; resize:none; line-height:
 <!-- MAIN -->
 <div id="screen-main">
   <div class="app-header">
-    <span class="header-title">📚 Biblioteca <small style="font-size:11px;opacity:0.6">v3.00</small></span>
+    <span class="header-title">📚 Biblioteca <small style="font-size:11px;opacity:0.6">v3.10</small></span>
     <span class="drive-status" id="drive-status">Drive</span>
     <button class="header-btn" title="Sincronizza" onclick="syncDrive()">☁</button>
     <button class="header-btn" title="Impostazioni" onclick="openSettings()">⚙</button>
@@ -1634,21 +1634,42 @@ async function selectTitleSearchResult(i) {
           const descText = tmp.textContent.slice(0, 500);
           if (descText) document.getElementById('f-description').value = descText;
         }
-        // Cerca ISBN nel testo della descrizione o negli aspecti
         const aspects = id.localizedAspects || [];
-        const isbnAspect = aspects.find(a => a.name?.toLowerCase().includes('isbn') || a.name?.toLowerCase().includes('ean'));
-        if (isbnAspect?.value && !document.getElementById('f-isbn').value) {
-          document.getElementById('f-isbn').value = isbnAspect.value.replace(/[^0-9X]/gi,'');
-        }
-        // Autore dagli aspetti
-        const authorAspect = aspects.find(a => a.name?.toLowerCase().includes('autore') || a.name?.toLowerCase().includes('author'));
-        if (authorAspect?.value && !document.getElementById('f-author').value) document.getElementById('f-author').value = authorAspect.value;
+        // Log aspetti per debug
+        console.log('eBay aspects:', aspects.map(a=>a.name+'='+a.value).join(', '));
+
+        const findAspect = (...keys) => aspects.find(a => keys.some(k => a.name?.toLowerCase().includes(k)));
+
+        // ISBN/EAN
+        const isbnA = findAspect('isbn','ean','codice');
+        if (isbnA?.value && !document.getElementById('f-isbn').value)
+          document.getElementById('f-isbn').value = isbnA.value.replace(/[^0-9X]/gi,'');
+        // Autore
+        const authorA = findAspect('autore','author','scrittore');
+        if (authorA?.value && !document.getElementById('f-author').value)
+          document.getElementById('f-author').value = authorA.value;
         // Editore
-        const pubAspect = aspects.find(a => a.name?.toLowerCase().includes('editore') || a.name?.toLowerCase().includes('publisher'));
-        if (pubAspect?.value && !document.getElementById('f-publisher').value) document.getElementById('f-publisher').value = pubAspect.value;
+        const pubA = findAspect('editore','publisher','casa editrice','editori');
+        if (pubA?.value && !document.getElementById('f-publisher').value)
+          document.getElementById('f-publisher').value = pubA.value;
         // Anno
-        const yearAspect = aspects.find(a => a.name?.toLowerCase().includes('anno') || a.name?.toLowerCase().includes('year') || a.name?.toLowerCase().includes('data'));
-        if (yearAspect?.value && !document.getElementById('f-year').value) document.getElementById('f-year').value = yearAspect.value.slice(0,4);
+        const yearA = findAspect('anno','year','data di pubblicazione','pubblicazione');
+        if (yearA?.value && !document.getElementById('f-year').value)
+          document.getElementById('f-year').value = yearA.value.replace(/[^0-9]/g,'').slice(0,4);
+        // Pagine
+        const pagesA = findAspect('pagine','pages','numero di pagine','lunghezza');
+        if (pagesA?.value && !document.getElementById('f-pages').value)
+          document.getElementById('f-pages').value = pagesA.value.replace(/[^0-9]/g,'');
+        // Lingua
+        const langA = findAspect('lingua','language','idioma');
+        if (langA?.value && !document.getElementById('f-language').value)
+          document.getElementById('f-language').value = langA.value;
+        // Genere
+        const genreA = findAspect('genere','genre','soggetto','categoria','argomento');
+        if (genreA?.value) {
+          const genreEl = document.getElementById('f-genre');
+          if (genreEl && !genreEl.value) genreEl.value = genreA.value;
+        }
         // Copertina migliorata
         if (id.image?.imageUrl && !coverDataUrl) { currentCoverUrl = id.image.imageUrl; renderCoverPreview(); }
         toast('Dettagli eBay caricati ✓');
