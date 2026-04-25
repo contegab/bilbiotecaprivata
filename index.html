@@ -1493,7 +1493,7 @@ async function searchByTitleAuthor() {
     const r = await fetch('https://openlibrary.org/search.json?' + params.join('&') + '&limit=10');
     const d = await r.json();
     toast('OL: ' + (d.docs?.length||0) + ' risultati');
-    (d.docs||[]).slice(0,10).filter(x=>x.title).forEach(doc => {
+    (d.docs||[]).slice(0,10).forEach(doc => { if (!doc.title) return;
       allResults.push({
         title: doc.title, author: (doc.author_name||[]).join(', '),
         publisher: (doc.publisher||[])[0]||'', year: doc.first_publish_year||'',
@@ -1507,7 +1507,7 @@ async function searchByTitleAuthor() {
 
   // Google Books
   try {
-    const r = await fetch('https://www.googleapis.com/books/v1/volumes?q=' + gbQuery + '&maxResults=10');
+    const gbQ = encodeURIComponent(queryPlain); const r = await fetch('https://www.googleapis.com/books/v1/volumes?q=' + gbQ + '&maxResults=10');
     const d = await r.json();
     toast('GB: ' + (d.items?.length||0) + ' risultati, status=' + r.status);
     (d.items||[]).slice(0,10).filter(x=>x.volumeInfo?.title).forEach(item => {
@@ -1543,6 +1543,7 @@ async function searchByTitleAuthor() {
   } catch(e) { toast('CR errore: ' + e.message); }
 
   // eBay
+  toast('eBay keys: ' + (ebayClientId?'SI':'NO'));
   if (ebayClientId && ebaySecret) try {
     const credentials = btoa(ebayClientId+':'+ebaySecret);
     const tr = await fetch('https://corsproxy.io/?'+encodeURIComponent('https://api.ebay.com/identity/v1/oauth2/token'), {
