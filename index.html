@@ -283,7 +283,7 @@ textarea.field-input { height:auto; padding:10px 14px; resize:none; line-height:
     <div class="auth-logo">📚</div>
     <div class="auth-title">Biblioteca Privata</div>
     <div class="auth-subtitle" id="auth-subtitle">Il tuo catalogo personale</div>
-    <div style="font-size:11px;color:var(--ink-light);opacity:0.5;text-align:center;margin-top:-20px;margin-bottom:8px">v2.90</div>
+    <div style="font-size:11px;color:var(--ink-light);opacity:0.5;text-align:center;margin-top:-20px;margin-bottom:8px">v2.91</div>
     <div class="divider-gold"></div>
     <div id="auth-setup" style="display:none">
       <label class="field-label">Crea password</label>
@@ -306,7 +306,7 @@ textarea.field-input { height:auto; padding:10px 14px; resize:none; line-height:
 <!-- MAIN -->
 <div id="screen-main">
   <div class="app-header">
-    <span class="header-title">📚 Biblioteca <small style="font-size:11px;opacity:0.6">v2.90</small></span>
+    <span class="header-title">📚 Biblioteca <small style="font-size:11px;opacity:0.6">v2.91</small></span>
     <span class="drive-status" id="drive-status">Drive</span>
     <button class="header-btn" title="Sincronizza" onclick="syncDrive()">☁</button>
     <button class="header-btn" title="Impostazioni" onclick="openSettings()">⚙</button>
@@ -1592,26 +1592,30 @@ function testImageUrl(url) {
 
 // Raccoglie TUTTE le copertine disponibili da tutte le fonti
 // Ritorna array di {url, source} — l'utente sceglie quale usare
-async function fetchAllCovers(isbn, gbCoverUrl) {
+async function fetchAllCovers(isbn, gbCoverUrl, ebayCoverUrls=[]) {
   const isbn10 = isbn13to10(isbn);
-  const candidates = [];
-
   const sources = [];
-  // Amazon — più affidabile da Netlify
+
+  // Amazon — max 6 varianti
   if (isbn10) {
     sources.push({ url:`https://images-na.ssl-images-amazon.com/images/P/${isbn10}.01.LZZZZZZZ.jpg`, source:'Amazon' });
     sources.push({ url:`https://images-na.ssl-images-amazon.com/images/P/${isbn10}.01.MZZZZZZZ.jpg`, source:'Amazon (M)' });
+    sources.push({ url:`https://images-na.ssl-images-amazon.com/images/P/${isbn10}.01.TZZZZZZZ.jpg`, source:'Amazon (S)' });
   }
-  // Google Books
+  // Google Books — max 6
   if (gbCoverUrl) {
     sources.push({ url:gbCoverUrl.replace('http://','https://').replace('zoom=1','zoom=3'), source:'Google Books' });
-    sources.push({ url:gbCoverUrl.replace('http://','https://').replace('zoom=1','zoom=1'), source:'Google Books (S)' });
+    sources.push({ url:gbCoverUrl.replace('http://','https://'), source:'Google Books (M)' });
   }
-  // OpenLibrary (funziona in alcuni contesti)
+  // OpenLibrary
   sources.push({ url:`https://covers.openlibrary.org/b/isbn/${isbn}-L.jpg`, source:'OpenLibrary' });
+  sources.push({ url:`https://covers.openlibrary.org/b/isbn/${isbn}-M.jpg`, source:'OpenLibrary (M)' });
+  // eBay — max 6
+  ebayCoverUrls.slice(0, 6).forEach((url, i) => {
+    sources.push({ url, source: i === 0 ? 'eBay' : `eBay (${i+1})` });
+  });
 
   setIsbnStatus('🖼 Ricerca copertine…', '');
-  // Testa tutte in parallelo
   const results = await Promise.all(sources.map(async s => {
     const ok = await testImageUrl(s.url);
     return ok ? s : null;
@@ -1952,10 +1956,10 @@ async function lookupIsbn() {
     } catch(e) { _dbg('Crossref errore: ' + e.message); }
   }
 
-  // ── 8. eBay Browse API (sempre per copertine, anche se libro già trovato) ─
+  // ── 8. eBay Browse API (dati + copertine) ─────────────────────────────
+  let ebayCoverUrls = [];
   if (ebayClientId && ebaySecret) {
     try {
-      // 1. Ottieni access token
       const credentials = btoa(`${ebayClientId}:${ebaySecret}`);
       const tokenUrl = 'https://api.ebay.com/identity/v1/oauth2/token';
       const tr = await fetch(`https://corsproxy.io/?${encodeURIComponent(tokenUrl)}`, {
@@ -1965,7 +1969,6 @@ async function lookupIsbn() {
       });
       const td = await tr.json();
       if (td.access_token) {
-        // 2. Cerca per ISBN
         const searchUrl = `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${isbn}&category_ids=267&limit=10&fieldgroups=MATCHING_ITEMS`;
         const sr = await fetch(`https://corsproxy.io/?${encodeURIComponent(searchUrl)}`, {
           headers: { 'Authorization': `Bearer ${td.access_token}`, 'X-EBAY-C-MARKETPLACE-ID': 'EBAY_IT' }
@@ -1975,29 +1978,12 @@ async function lookupIsbn() {
         const item = items[0];
         if (item?.title) {
           if (!found) {
-            // Usa dati eBay solo se il libro non è stato trovato altrove
             found = true;
-            fill({
-              title:     item.title,
-              author:    '',
-              publisher: '',
-              year:      '',
-              description: '',
-            });
+            fill({ title:item.title, author:'', publisher:'', year:'', description:'' });
           }
-          // Raccoglie tutte le immagini disponibili tra i risultati come candidati copertina
-          const ebayCoverUrls = items
-            .map(i => i.image?.imageUrl)
-            .filter(Boolean)
-            .filter((url, idx, arr) => arr.indexOf(url) === idx); // dedup
-          if (ebayCoverUrls.length > 0) {
-            // Aggiunge le copertine eBay ai candidati esistenti
-            const ebayCandidates = ebayCoverUrls.map(url => ({ url, label: 'eBay' }));
-            coverCandidates = [...coverCandidates, ...ebayCandidates];
-            gbCoverUrl = ebayCoverUrls[0];
-            _dbg('eBay: ' + ebayCoverUrls.length + ' copertine trovate');
-          }
-          _dbg('eBay: trovato ' + item.title);
+          ebayCoverUrls = items.map(i => i.image?.imageUrl).filter(Boolean)
+            .filter((u, i, a) => a.indexOf(u) === i);
+          _dbg('eBay: trovato ' + item.title + ', ' + ebayCoverUrls.length + ' copertine');
         }
       }
     } catch(e) { _dbg('eBay errore: ' + e.message); }
@@ -2016,7 +2002,7 @@ async function lookupIsbn() {
 
   // ── Copertine ──────────────────────────────────────────────────────────
   if (!coverDataUrl) {
-    const candidates = await fetchAllCovers(isbn, gbCoverUrl);
+    const candidates = await fetchAllCovers(isbn, gbCoverUrl, ebayCoverUrls);
     if (candidates.length > 0) {
       showCoverPicker(candidates);
       selectCover(candidates[0].url, 0);
