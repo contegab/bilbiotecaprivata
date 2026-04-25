@@ -283,7 +283,7 @@ textarea.field-input { height:auto; padding:10px 14px; resize:none; line-height:
     <div class="auth-logo">📚</div>
     <div class="auth-title">Biblioteca Privata</div>
     <div class="auth-subtitle" id="auth-subtitle">Il tuo catalogo personale</div>
-    <div style="font-size:11px;color:var(--ink-light);opacity:0.5;text-align:center;margin-top:-20px;margin-bottom:8px">v3.40</div>
+    <div style="font-size:11px;color:var(--ink-light);opacity:0.5;text-align:center;margin-top:-20px;margin-bottom:8px">v3.50</div>
     <div class="divider-gold"></div>
     <div id="auth-setup" style="display:none">
       <label class="field-label">Crea password</label>
@@ -306,7 +306,7 @@ textarea.field-input { height:auto; padding:10px 14px; resize:none; line-height:
 <!-- MAIN -->
 <div id="screen-main">
   <div class="app-header">
-    <span class="header-title">📚 Biblioteca <small style="font-size:11px;opacity:0.6">v3.40</small></span>
+    <span class="header-title">📚 Biblioteca <small style="font-size:11px;opacity:0.6">v3.50</small></span>
     <span class="drive-status" id="drive-status">Drive</span>
     <button class="header-btn" title="Sincronizza" onclick="syncDrive()">☁</button>
     <button class="header-btn" title="Impostazioni" onclick="openSettings()">⚙</button>
@@ -1589,13 +1589,18 @@ async function selectTitleSearchResult(i) {
   const res = window._titleSearchResults?.[i];
   if (!res) return;
 
-  // Popola subito i campi con i dati disponibili
-  if (res.isbn)        document.getElementById('f-isbn').value        = res.isbn;
-  if (res.title)       document.getElementById('f-title').value       = res.title;
-  if (res.author)      document.getElementById('f-author').value      = res.author;
-  if (res.publisher)   document.getElementById('f-publisher').value   = res.publisher;
-  if (res.year)        document.getElementById('f-year').value        = res.year;
-  if (res.description) document.getElementById('f-description').value = res.description;
+  // Sovrascrive sempre tutti i campi (anche se vuoti) quando si seleziona un nuovo libro
+  document.getElementById('f-isbn').value        = res.isbn        || '';
+  document.getElementById('f-title').value       = res.title       || '';
+  document.getElementById('f-author').value      = res.author      || '';
+  document.getElementById('f-publisher').value   = res.publisher   || '';
+  document.getElementById('f-year').value        = res.year        || '';
+  document.getElementById('f-description').value = res.description || '';
+  document.getElementById('f-notes').value       = '';
+  document.getElementById('f-pages').value       = '';
+  document.getElementById('f-language').value    = '';
+  document.getElementById('f-genre').value       = '';
+  document.getElementById('f-location').value    = '';
 
   // Imposta copertina se disponibile
   if (res.cover) {
