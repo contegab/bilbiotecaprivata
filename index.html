@@ -283,7 +283,7 @@ textarea.field-input { height:auto; padding:10px 14px; resize:none; line-height:
     <div class="auth-logo">📚</div>
     <div class="auth-title">Biblioteca Privata</div>
     <div class="auth-subtitle" id="auth-subtitle">Il tuo catalogo personale</div>
-    <div style="font-size:11px;color:var(--ink-light);opacity:0.5;text-align:center;margin-top:-20px;margin-bottom:8px">v4.21</div>
+    <div style="font-size:11px;color:var(--ink-light);opacity:0.5;text-align:center;margin-top:-20px;margin-bottom:8px">v4.22-debug</div>
     <div class="divider-gold"></div>
     <div id="auth-setup" style="display:none">
       <label class="field-label">Crea password</label>
@@ -306,7 +306,7 @@ textarea.field-input { height:auto; padding:10px 14px; resize:none; line-height:
 <!-- MAIN -->
 <div id="screen-main">
   <div class="app-header">
-    <span class="header-title">📚 Biblioteca <small style="font-size:11px;opacity:0.6">v4.21</small></span>
+    <span class="header-title">📚 Biblioteca <small style="font-size:11px;opacity:0.6">v4.22-debug</small></span>
     <span class="drive-status" id="drive-status">Drive</span>
     <button class="header-btn" title="Sincronizza" onclick="syncDrive()">☁</button>
     <button class="header-btn" title="Impostazioni" onclick="openSettings()">⚙</button>
@@ -1197,12 +1197,15 @@ async function dailyDriveBackup() {
   try {
     const today = new Date().toISOString().slice(0, 10);
     const lastBackup = localStorage.getItem('bp_last_drive_backup');
-    if (lastBackup === today) return; // già fatto oggi
-    if (!refreshToken || !allBooks.length) return;
+    toast('Backup Drive: check ' + today + ' last=' + (lastBackup||'mai'));
+    if (lastBackup === today) { toast('Backup già fatto oggi'); return; }
+    if (!refreshToken) { toast('Backup: no refreshToken'); return; }
+    if (!allBooks.length) { toast('Backup: allBooks vuoto'); return; }
     const token = await ensureToken();
-    if (!token) return;
+    if (!token) { toast('Backup: no token'); return; }
     const fid = await getFolderId();
-    if (!fid) return;
+    if (!fid) { toast('Backup: no folderId'); return; }
+    toast('Backup Drive in corso...');
     const backupFolderId = await getOrCreateBackupFolder(token, fid);
     // Controlla se esiste già un backup di oggi
     const backups = await listDriveBackups(token, backupFolderId);
@@ -1224,8 +1227,8 @@ async function dailyDriveBackup() {
       method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: form
     });
     localStorage.setItem('bp_last_drive_backup', today);
-    console.log(`Backup Drive creato: biblioteca_${today}.json`);
-  } catch(e) { console.warn('Backup Drive fallito:', e.message); }
+    toast('Backup Drive creato: biblioteca_' + today + '.json ✓');
+  } catch(e) { toast('Backup Drive errore: ' + e.message); }
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -1904,8 +1907,37 @@ async function searchCoversOnline() {
 }
 function handleCoverFile(input) {
   const file = input.files[0]; if (!file) return;
+  const MAX_SIZE = 500 * 1024; // 500KB — soglia compressione
   const r = new FileReader();
-  r.onload = e => { coverDataUrl = e.target.result; renderCoverPreview(); };
+  r.onload = e => {
+    const dataUrl = e.target.result;
+    if (file.size <= MAX_SIZE) {
+      // File piccolo — usa direttamente
+      coverDataUrl = dataUrl;
+      renderCoverPreview();
+      return;
+    }
+    // File grande — comprimi tramite Canvas
+    const img = new Image();
+    img.onload = () => {
+      const MAX_W = 800, MAX_H = 1200;
+      let w = img.width, h = img.height;
+      // Ridimensiona mantenendo proporzioni
+      if (w > MAX_W || h > MAX_H) {
+        const ratio = Math.min(MAX_W / w, MAX_H / h);
+        w = Math.round(w * ratio);
+        h = Math.round(h * ratio);
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      coverDataUrl = canvas.toDataURL('image/jpeg', 0.80);
+      renderCoverPreview();
+      const newSize = Math.round(coverDataUrl.length * 0.75 / 1024);
+      toast(`Copertina compressa: ${Math.round(file.size/1024)}KB → ${newSize}KB`);
+    };
+    img.src = dataUrl;
+  };
   r.readAsDataURL(file);
 }
 function clearCover() {
