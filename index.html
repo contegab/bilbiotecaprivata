@@ -283,7 +283,7 @@ textarea.field-input { height:auto; padding:10px 14px; resize:none; line-height:
     <div class="auth-logo">📚</div>
     <div class="auth-title">Biblioteca Privata</div>
     <div class="auth-subtitle" id="auth-subtitle">Il tuo catalogo personale</div>
-    <div style="font-size:11px;color:var(--ink-light);opacity:0.5;text-align:center;margin-top:-20px;margin-bottom:8px">v4.20</div>
+    <div style="font-size:11px;color:var(--ink-light);opacity:0.5;text-align:center;margin-top:-20px;margin-bottom:8px">v4.21</div>
     <div class="divider-gold"></div>
     <div id="auth-setup" style="display:none">
       <label class="field-label">Crea password</label>
@@ -306,7 +306,7 @@ textarea.field-input { height:auto; padding:10px 14px; resize:none; line-height:
 <!-- MAIN -->
 <div id="screen-main">
   <div class="app-header">
-    <span class="header-title">📚 Biblioteca <small style="font-size:11px;opacity:0.6">v4.20</small></span>
+    <span class="header-title">📚 Biblioteca <small style="font-size:11px;opacity:0.6">v4.21</small></span>
     <span class="drive-status" id="drive-status">Drive</span>
     <button class="header-btn" title="Sincronizza" onclick="syncDrive()">☁</button>
     <button class="header-btn" title="Impostazioni" onclick="openSettings()">⚙</button>
@@ -834,7 +834,11 @@ async function enterApp() {
   // Connessione Drive automatica
   if (refreshToken) setTimeout(async () => {
     const t = await ensureToken();
-    if (t) loadFromDrive();
+    if (t) {
+      await loadFromDrive();
+      // Backup giornaliero automatico dopo il caricamento
+      dailyDriveBackup();
+    }
   }, 400);
   // Gestione resume app su mobile: se le variabili JS vengono perse (RAM liberata)
   // torna al login quando l'utente riapre l'app
@@ -1151,6 +1155,79 @@ async function loadFromDrive() {
     toast(`Catalogo caricato — ${allBooks.length} libri`);
   } catch(err) { toast('Errore caricamento Drive: ' + err.message); }
 }
+
+// ── BACKUP AUTOMATICO GIORNALIERO SU DRIVE ────────────────────────────────
+const BACKUP_FOLDER_NAME = 'Backup';
+const MAX_DRIVE_BACKUPS  = 10;
+
+async function getOrCreateBackupFolder(token, parentFolderId) {
+  // Cerca la cartella Backup dentro BibliotecaPrivata
+  const q = encodeURIComponent(`name='${BACKUP_FOLDER_NAME}' and '${parentFolderId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`);
+  const r = await fetch(`${GOOGLE_API}drive/v3/files?q=${q}&fields=files(id,name)`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  const d = await r.json();
+  if (d.files?.length > 0) return d.files[0].id;
+  // Crea la cartella Backup
+  const cr = await fetch(`${GOOGLE_API}drive/v3/files`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: BACKUP_FOLDER_NAME, mimeType: 'application/vnd.google-apps.folder', parents: [parentFolderId] })
+  });
+  const cd = await cr.json();
+  return cd.id;
+}
+
+async function listDriveBackups(token, backupFolderId) {
+  const q = encodeURIComponent(`'${backupFolderId}' in parents and name contains 'biblioteca_' and trashed=false`);
+  const r = await fetch(`${GOOGLE_API}drive/v3/files?q=${q}&fields=files(id,name,createdTime)&orderBy=createdTime`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  const d = await r.json();
+  return d.files || [];
+}
+
+async function deleteDriveFile(token, fileId) {
+  await fetch(`${GOOGLE_API}drive/v3/files/${fileId}`, {
+    method: 'DELETE', headers: { Authorization: `Bearer ${token}` }
+  });
+}
+
+async function dailyDriveBackup() {
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    const lastBackup = localStorage.getItem('bp_last_drive_backup');
+    if (lastBackup === today) return; // già fatto oggi
+    if (!refreshToken || !allBooks.length) return;
+    const token = await ensureToken();
+    if (!token) return;
+    const fid = await getFolderId();
+    if (!fid) return;
+    const backupFolderId = await getOrCreateBackupFolder(token, fid);
+    // Controlla se esiste già un backup di oggi
+    const backups = await listDriveBackups(token, backupFolderId);
+    const todayFile = backups.find(f => f.name === `biblioteca_${today}.json`);
+    if (todayFile) { localStorage.setItem('bp_last_drive_backup', today); return; }
+    // Elimina backup più vecchi se > MAX_DRIVE_BACKUPS - 1
+    const sorted = backups.sort((a, b) => a.createdTime.localeCompare(b.createdTime));
+    while (sorted.length >= MAX_DRIVE_BACKUPS) {
+      const old = sorted.shift();
+      await deleteDriveFile(token, old.id);
+    }
+    // Crea nuovo backup con copertine incluse
+    const blob = new Blob([JSON.stringify(allBooks, null, 2)], { type: 'application/json' });
+    const meta = JSON.stringify({ name: `biblioteca_${today}.json`, parents: [backupFolderId] });
+    const form = new FormData();
+    form.append('metadata', new Blob([meta], { type: 'application/json' }));
+    form.append('file', blob);
+    await fetch(`${GOOGLE_API}upload/drive/v3/files?uploadType=multipart`, {
+      method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: form
+    });
+    localStorage.setItem('bp_last_drive_backup', today);
+    console.log(`Backup Drive creato: biblioteca_${today}.json`);
+  } catch(e) { console.warn('Backup Drive fallito:', e.message); }
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
 async function saveToDrive() {
   try {
