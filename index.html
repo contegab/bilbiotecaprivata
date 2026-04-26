@@ -283,7 +283,7 @@ textarea.field-input { height:auto; padding:10px 14px; resize:none; line-height:
     <div class="auth-logo">📚</div>
     <div class="auth-title">Biblioteca Privata</div>
     <div class="auth-subtitle" id="auth-subtitle">Il tuo catalogo personale</div>
-    <div style="font-size:11px;color:var(--ink-light);opacity:0.5;text-align:center;margin-top:-20px;margin-bottom:8px">v4.18</div>
+    <div style="font-size:11px;color:var(--ink-light);opacity:0.5;text-align:center;margin-top:-20px;margin-bottom:8px">v4.19</div>
     <div class="divider-gold"></div>
     <div id="auth-setup" style="display:none">
       <label class="field-label">Crea password</label>
@@ -306,7 +306,7 @@ textarea.field-input { height:auto; padding:10px 14px; resize:none; line-height:
 <!-- MAIN -->
 <div id="screen-main">
   <div class="app-header">
-    <span class="header-title">📚 Biblioteca <small style="font-size:11px;opacity:0.6">v4.18</small></span>
+    <span class="header-title">📚 Biblioteca <small style="font-size:11px;opacity:0.6">v4.19</small></span>
     <span class="drive-status" id="drive-status">Drive</span>
     <button class="header-btn" title="Sincronizza" onclick="syncDrive()">☁</button>
     <button class="header-btn" title="Impostazioni" onclick="openSettings()">⚙</button>
@@ -414,11 +414,11 @@ textarea.field-input { height:auto; padding:10px 14px; resize:none; line-height:
       </div>
       <div class="form-group">
         <label class="field-label">Titolo *</label>
-        <input class="field-input" type="text" id="f-title" placeholder="Titolo del libro">
+        <input class="field-input" type="text" id="f-title" placeholder="Titolo del libro" oninput="formatTitle(this)">
       </div>
       <div class="form-group">
         <label class="field-label">Autore</label>
-        <input class="field-input" type="text" id="f-author" placeholder="Nome Cognome">
+        <input class="field-input" type="text" id="f-author" placeholder="Nome Cognome" oninput="formatAuthor(this)">
       </div>
       <div class="form-row">
         <div class="form-group">
@@ -1558,6 +1558,29 @@ async function refreshBookData() {
   renderCoverPreview();
   // Chiama lookupIsbn — in modalità modifica (editBookId != null) non chiede duplicati
   await lookupIsbn();
+}
+
+function formatAuthor(el) {
+  const particles = ['di','de','del','della','delle','dei','degli','van','von','le','la','los','las','bin','bint','al'];
+  const pos = el.selectionStart;
+  el.value = el.value
+    .split(' ')
+    .map((w, i) => {
+      if (!w) return w;
+      if (i > 0 && particles.includes(w.toLowerCase())) return w.toLowerCase();
+      return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
+    })
+    .join(' ');
+  el.setSelectionRange(pos, pos);
+}
+
+function formatTitle(el) {
+  const pos = el.selectionStart;
+  const v = el.value;
+  if (v.length > 0) {
+    el.value = v.charAt(0).toUpperCase() + v.slice(1);
+  }
+  el.setSelectionRange(pos, pos);
 }
 
 function pickCoverFile() { document.getElementById('cover-file-input').click(); }
