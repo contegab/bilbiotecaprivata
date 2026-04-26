@@ -283,7 +283,7 @@ textarea.field-input { height:auto; padding:10px 14px; resize:none; line-height:
     <div class="auth-logo">📚</div>
     <div class="auth-title">Biblioteca Privata</div>
     <div class="auth-subtitle" id="auth-subtitle">Il tuo catalogo personale</div>
-    <div style="font-size:11px;color:var(--ink-light);opacity:0.5;text-align:center;margin-top:-20px;margin-bottom:8px">v4.14</div>
+    <div style="font-size:11px;color:var(--ink-light);opacity:0.5;text-align:center;margin-top:-20px;margin-bottom:8px">v4.16-debug</div>
     <div class="divider-gold"></div>
     <div id="auth-setup" style="display:none">
       <label class="field-label">Crea password</label>
@@ -306,7 +306,7 @@ textarea.field-input { height:auto; padding:10px 14px; resize:none; line-height:
 <!-- MAIN -->
 <div id="screen-main">
   <div class="app-header">
-    <span class="header-title">📚 Biblioteca <small style="font-size:11px;opacity:0.6">v4.14</small></span>
+    <span class="header-title">📚 Biblioteca <small style="font-size:11px;opacity:0.6">v4.16-debug</small></span>
     <span class="drive-status" id="drive-status">Drive</span>
     <button class="header-btn" title="Sincronizza" onclick="syncDrive()">☁</button>
     <button class="header-btn" title="Impostazioni" onclick="openSettings()">⚙</button>
@@ -1859,16 +1859,17 @@ async function saveBook() {
   const author = document.getElementById('f-author').value.trim();
   if (!title)  return toast('Il titolo è obbligatorio');
   if (!author) return toast('Autore obbligatorio');
+  console.log('saveBook: editBookId=', editBookId);
 
-  // Controllo duplicato per titolo/autore simili (solo per nuovi libri, non per modifica)
+  // Controllo duplicato per titolo/autore simili (solo per nuovi libri)
   if (!editBookId) {
     const normalize = s => s.toLowerCase().replace(/[^a-z0-9]/g,'');
     const titleNorm  = normalize(title);
     const authorNorm = normalize(author);
     const similar = allBooks.find(b => {
+      if (b.id === editBookId) return false; // escludi libro corrente
       const bt = normalize(b.title  || '');
       const ba = normalize(b.author || '');
-      // Similarità: uno contiene l'altro o viceversa (almeno 6 char)
       const titleMatch  = titleNorm.length  >= 6 && (bt.includes(titleNorm)  || titleNorm.includes(bt));
       const authorMatch = authorNorm.length >= 4 && (ba.includes(authorNorm) || authorNorm.includes(ba));
       return titleMatch && authorMatch;
@@ -2149,20 +2150,22 @@ async function lookupIsbn() {
     return lookupISSN(isbn);
   }
 
-  // Controllo duplicato ISBN
-  const existingBook = allBooks.find(b => {
-    const bIsbn = (b.isbn || '').replace(/[^0-9X]/gi,'').toUpperCase();
-    return bIsbn === isbn || bIsbn === isbn.slice(3, 12) + isbn[12];
-  });
-  if (existingBook) {
-    const ok = await showConfirm(
-      'Libro già presente',
-      `"${existingBook.title}" è già nel catalogo con ISBN ${existingBook.isbn}. Vuoi aggiungere comunque un doppione?`
-    );
-    if (!ok) {
-      document.getElementById('f-isbn').value = '';
-      setIsbnStatus('', '');
-      return;
+  // Controllo duplicato ISBN — solo per nuovi libri, non in modifica
+  if (!editBookId) {
+    const existingBook = allBooks.find(b => {
+      const bIsbn = (b.isbn || '').replace(/[^0-9X]/gi,'').toUpperCase();
+      return bIsbn === isbn || bIsbn === isbn.slice(3, 12) + isbn[12];
+    });
+    if (existingBook) {
+      const ok = await showConfirm(
+        'Libro già presente',
+        `"${existingBook.title}" è già nel catalogo con ISBN ${existingBook.isbn}. Vuoi aggiungere comunque un doppione?`
+      );
+      if (!ok) {
+        document.getElementById('f-isbn').value = '';
+        setIsbnStatus('', '');
+        return;
+      }
     }
   }
 
