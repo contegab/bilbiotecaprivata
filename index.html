@@ -1195,20 +1195,15 @@ async function dailyDriveBackup() {
   try {
     const _d = new Date();
     const today = _d.getFullYear() + '-' + String(_d.getMonth()+1).padStart(2,'0') + '-' + String(_d.getDate()).padStart(2,'0');
-    toast('DBG backup start: books=' + allBooks.length + ' rt=' + (refreshToken?'SI':'NO'));
     if (!refreshToken || !allBooks.length) return;
     const token = await ensureToken();
-    toast('DBG token: ' + (token?'OK':'NO'));
     if (!token) return;
     const fid = await getFolderId();
-    toast('DBG folderId: ' + (fid?'OK':'NO'));
     if (!fid) return;
     const backupFolderId = await getOrCreateBackupFolder(token, fid);
-    toast('DBG backupFolderId: ' + (backupFolderId?'OK':'NO'));
     const backups = await listDriveBackups(token, backupFolderId);
-    toast('DBG backups: ' + backups.length + ' files');
     const todayFile = backups.find(f => f.name === `biblioteca_${today}.json`);
-    if (todayFile) { toast('DBG: backup oggi già esiste'); return; }
+    if (todayFile) return;
     const sorted = backups.sort((a, b) => a.createdTime.localeCompare(b.createdTime));
     while (sorted.length >= MAX_DRIVE_BACKUPS) {
       const old = sorted.shift();
