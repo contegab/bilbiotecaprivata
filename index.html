@@ -283,7 +283,7 @@ textarea.field-input { height:auto; padding:10px 14px; resize:none; line-height:
     <div class="auth-logo">📚</div>
     <div class="auth-title">Biblioteca Privata</div>
     <div class="auth-subtitle" id="auth-subtitle">Il tuo catalogo personale</div>
-    <div style="font-size:11px;color:var(--ink-light);opacity:0.5;text-align:center;margin-top:-20px;margin-bottom:8px">v4.24</div>
+    <div style="font-size:11px;color:var(--ink-light);opacity:0.5;text-align:center;margin-top:-20px;margin-bottom:8px">v4.24-debug</div>
     <div class="divider-gold"></div>
     <div id="auth-setup" style="display:none">
       <label class="field-label">Crea password</label>
@@ -306,7 +306,7 @@ textarea.field-input { height:auto; padding:10px 14px; resize:none; line-height:
 <!-- MAIN -->
 <div id="screen-main">
   <div class="app-header">
-    <span class="header-title">📚 Biblioteca <small style="font-size:11px;opacity:0.6">v4.24</small></span>
+    <span class="header-title">📚 Biblioteca <small style="font-size:11px;opacity:0.6">v4.24-debug</small></span>
     <span class="drive-status" id="drive-status">Drive</span>
     <button class="header-btn" title="Sincronizza" onclick="syncDrive()">☁</button>
     <button class="header-btn" title="Impostazioni" onclick="openSettings()">⚙</button>
@@ -1196,33 +1196,36 @@ async function deleteDriveFile(token, fileId) {
 async function dailyDriveBackup() {
   try {
     const today = new Date().toISOString().slice(0, 10);
+    toast('DBG backup start: books=' + allBooks.length + ' rt=' + (refreshToken?'SI':'NO'));
     if (!refreshToken || !allBooks.length) return;
     const token = await ensureToken();
+    toast('DBG token: ' + (token?'OK':'NO'));
     if (!token) return;
     const fid = await getFolderId();
+    toast('DBG folderId: ' + (fid?'OK':'NO'));
     if (!fid) return;
     const backupFolderId = await getOrCreateBackupFolder(token, fid);
-    // Controlla su Drive se esiste già un backup di oggi
+    toast('DBG backupFolderId: ' + (backupFolderId?'OK':'NO'));
     const backups = await listDriveBackups(token, backupFolderId);
+    toast('DBG backups: ' + backups.length + ' files');
     const todayFile = backups.find(f => f.name === `biblioteca_${today}.json`);
-    if (todayFile) return; // già presente su Drive
-    // Elimina backup più vecchi se >= MAX_DRIVE_BACKUPS
+    if (todayFile) { toast('DBG: backup oggi già esiste'); return; }
     const sorted = backups.sort((a, b) => a.createdTime.localeCompare(b.createdTime));
     while (sorted.length >= MAX_DRIVE_BACKUPS) {
       const old = sorted.shift();
       await deleteDriveFile(token, old.id);
     }
-    // Crea nuovo backup con copertine incluse
     const blob = new Blob([JSON.stringify(allBooks, null, 2)], { type: 'application/json' });
     const meta = JSON.stringify({ name: `biblioteca_${today}.json`, parents: [backupFolderId] });
     const form = new FormData();
     form.append('metadata', new Blob([meta], { type: 'application/json' }));
     form.append('file', blob);
-    await fetch(`${GOOGLE_API}upload/drive/v3/files?uploadType=multipart`, {
+    const res = await fetch(`${GOOGLE_API}upload/drive/v3/files?uploadType=multipart`, {
       method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: form
     });
-    console.log('Backup Drive creato: biblioteca_' + today + '.json');
-  } catch(e) { console.warn('Backup Drive fallito:', e.message); }
+    toast('DBG upload: status=' + res.status);
+    if (res.ok) toast('Backup Drive creato ✓ ' + today);
+  } catch(e) { toast('DBG errore: ' + e.message); }
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
