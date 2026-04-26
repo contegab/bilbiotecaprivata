@@ -283,7 +283,7 @@ textarea.field-input { height:auto; padding:10px 14px; resize:none; line-height:
     <div class="auth-logo">📚</div>
     <div class="auth-title">Biblioteca Privata</div>
     <div class="auth-subtitle" id="auth-subtitle">Il tuo catalogo personale</div>
-    <div style="font-size:11px;color:var(--ink-light);opacity:0.5;text-align:center;margin-top:-20px;margin-bottom:8px">v4.16-debug</div>
+    <div style="font-size:11px;color:var(--ink-light);opacity:0.5;text-align:center;margin-top:-20px;margin-bottom:8px">v4.17</div>
     <div class="divider-gold"></div>
     <div id="auth-setup" style="display:none">
       <label class="field-label">Crea password</label>
@@ -306,7 +306,7 @@ textarea.field-input { height:auto; padding:10px 14px; resize:none; line-height:
 <!-- MAIN -->
 <div id="screen-main">
   <div class="app-header">
-    <span class="header-title">📚 Biblioteca <small style="font-size:11px;opacity:0.6">v4.16-debug</small></span>
+    <span class="header-title">📚 Biblioteca <small style="font-size:11px;opacity:0.6">v4.17</small></span>
     <span class="drive-status" id="drive-status">Drive</span>
     <button class="header-btn" title="Sincronizza" onclick="syncDrive()">☁</button>
     <button class="header-btn" title="Impostazioni" onclick="openSettings()">⚙</button>
@@ -332,8 +332,8 @@ textarea.field-input { height:auto; padding:10px 14px; resize:none; line-height:
         <label style="font-size:11px;color:var(--ink-light)">Editore<input class="field-input" type="text" data-field="publisher" oninput="runAdvancedSearch()" placeholder="Editore..." style="margin-top:2px;font-size:12px;height:34px"></label>
         <label style="font-size:11px;color:var(--ink-light)">ISBN<input class="field-input" type="text" data-field="isbn" oninput="runAdvancedSearch()" placeholder="ISBN..." style="margin-top:2px;font-size:12px;height:34px"></label>
         <label style="font-size:11px;color:var(--ink-light)">Collocazione<input class="field-input" type="text" data-field="location" oninput="runAdvancedSearch()" placeholder="Collocazione..." style="margin-top:2px;font-size:12px;height:34px"></label>
-        <label style="font-size:11px;color:var(--ink-light)">Categoria 1<input class="field-input" type="text" data-field="cat1" oninput="runAdvancedSearch()" placeholder="Categoria 1..." style="margin-top:2px;font-size:12px;height:34px"></label>
-        <label style="font-size:11px;color:var(--ink-light)">Categoria 2<input class="field-input" type="text" data-field="cat2" oninput="runAdvancedSearch()" placeholder="Categoria 2..." style="margin-top:2px;font-size:12px;height:34px"></label>
+        <label style="font-size:11px;color:var(--ink-light)">Argomento<input class="field-input" type="text" data-field="cat1" oninput="runAdvancedSearch()" placeholder="Argomento..." style="margin-top:2px;font-size:12px;height:34px"></label>
+        <label style="font-size:11px;color:var(--ink-light)">Particolarità<input class="field-input" type="text" data-field="cat2" oninput="runAdvancedSearch()" placeholder="Particolarità..." style="margin-top:2px;font-size:12px;height:34px"></label>
         <label style="font-size:11px;color:var(--ink-light)">Note<input class="field-input" type="text" data-field="notes" oninput="runAdvancedSearch()" placeholder="Note..." style="margin-top:2px;font-size:12px;height:34px"></label>
       </div>
       <button class="btn-xs" onclick="clearAdvancedSearch()" style="margin-top:8px">✕ Azzera ricerca</button>
@@ -472,12 +472,12 @@ textarea.field-input { height:auto; padding:10px 14px; resize:none; line-height:
         </div>
       </div>
       <div class="form-group">
-        <label class="field-label">Categoria statistica 1</label>
-        <input class="field-input" type="text" id="f-cat1" placeholder="Categoria statistica 1">
+        <label class="field-label">Argomento</label>
+        <input class="field-input" type="text" id="f-cat1" placeholder="Argomento">
       </div>
       <div class="form-group">
-        <label class="field-label">Categoria statistica 2</label>
-        <input class="field-input" type="text" id="f-cat2" placeholder="Categoria statistica 2">
+        <label class="field-label">Particolarità</label>
+        <input class="field-input" type="text" id="f-cat2" placeholder="Particolarità">
       </div>
       <div class="form-group">
         <label class="field-label">Note personali</label>
@@ -1429,7 +1429,7 @@ function openDetail(id) {
     ['Editore', b.publisher], ['Anno', b.year],
     ['Pagine', b.pages ? b.pages+' pp.' : ''],
     ['Genere', b.genre], ['Lingua', b.language], ['ISBN', b.isbn],
-    ['Collocazione', b.location], ['Categoria 1', b.cat1], ['Categoria 2', b.cat2], ['Aggiunto', b.date_added?.slice(0,10)],
+    ['Collocazione', b.location], ['Argomento', b.cat1], ['Particolarità', b.cat2], ['Aggiunto', b.date_added?.slice(0,10)],
   ].filter(([,v]) => v);
 
   document.getElementById('detail-body').innerHTML = `
@@ -1533,7 +1533,7 @@ function renderStatusBtns() {
 function setStatus(btn) { currentStatus = btn.dataset.status; renderStatusBtns(); }
 async function refreshBookData() {
   const isbn = document.getElementById('f-isbn').value.replace(/[^0-9X]/gi,'').toUpperCase();
-  if (!isbn) return toast('Inserisci un ISBN per aggiornare i dati');
+  if (!isbn) return toast('ISBN necessario per aggiornare dal catalogo');
   // Azzera copertina per permettere nuova ricerca
   coverDataUrl    = null;
   currentCoverUrl = '';
@@ -1859,7 +1859,6 @@ async function saveBook() {
   const author = document.getElementById('f-author').value.trim();
   if (!title)  return toast('Il titolo è obbligatorio');
   if (!author) return toast('Autore obbligatorio');
-  console.log('saveBook: editBookId=', editBookId);
 
   // Controllo duplicato per titolo/autore simili (solo per nuovi libri)
   if (!editBookId) {
