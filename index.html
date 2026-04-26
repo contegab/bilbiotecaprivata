@@ -283,7 +283,7 @@ textarea.field-input { height:auto; padding:10px 14px; resize:none; line-height:
     <div class="auth-logo">📚</div>
     <div class="auth-title">Biblioteca Privata</div>
     <div class="auth-subtitle" id="auth-subtitle">Il tuo catalogo personale</div>
-    <div style="font-size:11px;color:var(--ink-light);opacity:0.5;text-align:center;margin-top:-20px;margin-bottom:8px">v4.00</div>
+    <div style="font-size:11px;color:var(--ink-light);opacity:0.5;text-align:center;margin-top:-20px;margin-bottom:8px">v4.120</div>
     <div class="divider-gold"></div>
     <div id="auth-setup" style="display:none">
       <label class="field-label">Crea password</label>
@@ -306,7 +306,7 @@ textarea.field-input { height:auto; padding:10px 14px; resize:none; line-height:
 <!-- MAIN -->
 <div id="screen-main">
   <div class="app-header">
-    <span class="header-title">📚 Biblioteca <small style="font-size:11px;opacity:0.6">v4.00</small></span>
+    <span class="header-title">📚 Biblioteca <small style="font-size:11px;opacity:0.6">v4.120</small></span>
     <span class="drive-status" id="drive-status">Drive</span>
     <button class="header-btn" title="Sincronizza" onclick="syncDrive()">☁</button>
     <button class="header-btn" title="Impostazioni" onclick="openSettings()">⚙</button>
@@ -318,9 +318,25 @@ textarea.field-input { height:auto; padding:10px 14px; resize:none; line-height:
     <div class="stat-item"><div class="stat-num" id="stat-da">0</div><div class="stat-lbl">Da leggere</div></div>
   </div>
   <div class="search-section">
-    <div class="search-row">
+    <div class="search-row" style="display:flex;align-items:center;gap:6px">
       <input class="search-input" type="search" id="search-input"
-             placeholder="🔍 Cerca titolo, autore, ISBN…" oninput="applyFilters()">
+             placeholder="🔍 Cerca titolo, autore, ISBN…" oninput="applyFilters()" style="flex:1">
+      <button class="btn-xs" onclick="toggleAdvancedSearch()" id="btn-advanced" style="white-space:nowrap;height:36px;padding:0 12px">⚙</button>
+    </div>
+    <!-- Pannello ricerca avanzata -->
+    <div id="advanced-search-panel" style="display:none;background:var(--parchment2);border:1px solid var(--parchment3);border-radius:8px;padding:10px;margin-top:6px">
+      <div style="font-size:11px;font-weight:600;color:var(--leather);margin-bottom:8px">Ricerca avanzata — AND tra i campi compilati</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+        <label style="font-size:11px;color:var(--ink-light)">Titolo<input class="field-input" type="text" data-field="title" oninput="runAdvancedSearch()" placeholder="Titolo..." style="margin-top:2px;font-size:12px;height:34px"></label>
+        <label style="font-size:11px;color:var(--ink-light)">Autore<input class="field-input" type="text" data-field="author" oninput="runAdvancedSearch()" placeholder="Autore..." style="margin-top:2px;font-size:12px;height:34px"></label>
+        <label style="font-size:11px;color:var(--ink-light)">Editore<input class="field-input" type="text" data-field="publisher" oninput="runAdvancedSearch()" placeholder="Editore..." style="margin-top:2px;font-size:12px;height:34px"></label>
+        <label style="font-size:11px;color:var(--ink-light)">ISBN<input class="field-input" type="text" data-field="isbn" oninput="runAdvancedSearch()" placeholder="ISBN..." style="margin-top:2px;font-size:12px;height:34px"></label>
+        <label style="font-size:11px;color:var(--ink-light)">Collocazione<input class="field-input" type="text" data-field="location" oninput="runAdvancedSearch()" placeholder="Collocazione..." style="margin-top:2px;font-size:12px;height:34px"></label>
+        <label style="font-size:11px;color:var(--ink-light)">Categoria 1<input class="field-input" type="text" data-field="cat1" oninput="runAdvancedSearch()" placeholder="Categoria 1..." style="margin-top:2px;font-size:12px;height:34px"></label>
+        <label style="font-size:11px;color:var(--ink-light)">Categoria 2<input class="field-input" type="text" data-field="cat2" oninput="runAdvancedSearch()" placeholder="Categoria 2..." style="margin-top:2px;font-size:12px;height:34px"></label>
+        <label style="font-size:11px;color:var(--ink-light)">Note<input class="field-input" type="text" data-field="notes" oninput="runAdvancedSearch()" placeholder="Note..." style="margin-top:2px;font-size:12px;height:34px"></label>
+      </div>
+      <button class="btn-xs" onclick="clearAdvancedSearch()" style="margin-top:8px">✕ Azzera ricerca</button>
     </div>
     <div class="filter-row">
       <button class="filter-btn active" data-filter=""           onclick="setFilter(this)">Tutti</button>
@@ -351,6 +367,7 @@ textarea.field-input { height:auto; padding:10px 14px; resize:none; line-height:
           <input class="field-input" type="text" id="f-isbn" placeholder="Codice ISBN" inputmode="numeric" style="margin-bottom:0" onkeydown="if(event.key==='Enter')lookupIsbn()">
           <button class="btn-icon" onclick="openScanner()" title="Scansiona">📷</button>
           <button class="btn-secondary" onclick="lookupIsbn()">Cerca</button>
+          <button class="btn-secondary" id="btn-refresh-data" onclick="refreshBookData()" style="display:none" title="Aggiorna dati dal catalogo">🔄</button>
         </div>
         <div style="display:flex;gap:5px;margin-top:5px;flex-wrap:wrap">
           <button class="btn-xs" onclick="searchOnSBN()" title="Catalogo Nazionale Italiano">📚 SBN</button>
@@ -451,6 +468,14 @@ textarea.field-input { height:auto; padding:10px 14px; resize:none; line-height:
           <button class="star-btn" data-val="4" onclick="setRating(4)">☆</button>
           <button class="star-btn" data-val="5" onclick="setRating(5)">☆</button>
         </div>
+      </div>
+      <div class="form-group">
+        <label class="field-label">Categoria statistica 1</label>
+        <input class="field-input" type="text" id="f-cat1" placeholder="Categoria statistica 1">
+      </div>
+      <div class="form-group">
+        <label class="field-label">Categoria statistica 2</label>
+        <input class="field-input" type="text" id="f-cat2" placeholder="Categoria statistica 2">
       </div>
       <div class="form-group">
         <label class="field-label">Note personali</label>
@@ -1267,17 +1292,56 @@ async function restoreBackup(slotIndex) {
 // ═══════════════════════════════════
 //  LISTA LIBRI
 // ═══════════════════════════════════
+function toggleAdvancedSearch() {
+  const panel = document.getElementById('advanced-search-panel');
+  const btn   = document.getElementById('btn-advanced');
+  const open  = panel.style.display === 'none';
+  panel.style.display = open ? 'block' : 'none';
+  btn.style.background = open ? 'var(--leather)' : '';
+  btn.style.color      = open ? '#fff' : '';
+  if (!open) clearAdvancedSearch();
+}
+
+function runAdvancedSearch() {
+  const inputs = document.querySelectorAll('#advanced-search-panel input[data-field]');
+  const fields = Array.from(inputs).map(el => ({ field: el.dataset.field, value: el.value.trim() }));
+  const hasAny = fields.some(f => f.value);
+  window._advancedSearch = { active: hasAny, fields };
+  document.getElementById('search-input').value = '';
+  applyFilters();
+}
+
+function clearAdvancedSearch() {
+  document.querySelectorAll('#advanced-search-panel input[data-field]').forEach(el => el.value = '');
+  window._advancedSearch = { active: false, fields: [] };
+  applyFilters();
+}
+
 function applyFilters() {
   const q = (document.getElementById('search-input')?.value || '').trim().toLowerCase();
   filteredBooks = allBooks.filter(b => {
     const matchF = !currentFilter || b.status === currentFilter;
-    const matchS = !q ||
-      (b.title    ||'').toLowerCase().includes(q) ||
-      (b.author   ||'').toLowerCase().includes(q) ||
-      (b.isbn     ||'').includes(q) ||
-      (b.location ||'').toLowerCase().includes(q) ||
-      (b.notes    ||'').toLowerCase().includes(q) ||
-      (b.publisher||'').toLowerCase().includes(q);
+    // Ricerca avanzata
+    const advSearch = window._advancedSearch;
+    let matchS;
+    if (advSearch && advSearch.active) {
+      matchS = advSearch.fields.every(f => {
+        const val = f.value.toLowerCase();
+        if (!val) return true;
+        const bval = (b[f.field] || '').toLowerCase();
+        return bval.includes(val);
+      });
+    } else {
+      matchS = !q ||
+        (b.title    ||'').toLowerCase().includes(q) ||
+        (b.author   ||'').toLowerCase().includes(q) ||
+        (b.isbn     ||'').includes(q) ||
+        (b.location ||'').toLowerCase().includes(q) ||
+        (b.notes    ||'').toLowerCase().includes(q) ||
+        (b.publisher||'').toLowerCase().includes(q) ||
+        (b.cat1     ||'').toLowerCase().includes(q) ||
+        (b.cat2     ||'').toLowerCase().includes(q);
+    }
     return matchF && matchS;
   });
   renderBooks();
@@ -1363,7 +1427,7 @@ function openDetail(id) {
     ['Editore', b.publisher], ['Anno', b.year],
     ['Pagine', b.pages ? b.pages+' pp.' : ''],
     ['Genere', b.genre], ['Lingua', b.language], ['ISBN', b.isbn],
-    ['Collocazione', b.location], ['Aggiunto', b.date_added?.slice(0,10)],
+    ['Collocazione', b.location], ['Categoria 1', b.cat1], ['Categoria 2', b.cat2], ['Aggiunto', b.date_added?.slice(0,10)],
   ].filter(([,v]) => v);
 
   document.getElementById('detail-body').innerHTML = `
@@ -1411,6 +1475,9 @@ function openForm(book=null) {
   currentCoverUrl = book?.cover_url  || '';
 
   document.getElementById('form-title').textContent      = book ? 'Modifica libro' : 'Aggiungi libro';
+  // Mostra pulsante "Aggiorna dati" solo in modalità modifica
+  const btnRefresh = document.getElementById('btn-refresh-data');
+  if (btnRefresh) btnRefresh.style.display = book ? 'inline-flex' : 'none';
   document.getElementById('f-isbn').value        = book?.isbn        || '';
   document.getElementById('f-title').value       = book?.title       || '';
   document.getElementById('f-author').value      = book?.author      || '';
@@ -1419,6 +1486,8 @@ function openForm(book=null) {
   document.getElementById('f-pages').value       = book?.pages       || '';
   document.getElementById('f-language').value    = book?.language    || '';
   document.getElementById('f-location').value    = book?.location    || '';
+  document.getElementById('f-cat1').value        = book?.cat1        || '';
+  document.getElementById('f-cat2').value        = book?.cat2        || '';
   document.getElementById('f-notes').value       = book?.notes       || '';
   document.getElementById('f-description').value = book?.description || '';
   document.getElementById('f-genre').value       = book?.genre       || '';
@@ -1460,6 +1529,19 @@ function renderStatusBtns() {
   });
 }
 function setStatus(btn) { currentStatus = btn.dataset.status; renderStatusBtns(); }
+async function refreshBookData() {
+  const isbnVal = document.getElementById('f-isbn').value.replace(/[^0-9X]/gi,'').toUpperCase();
+  if (!isbnVal) return toast('Inserisci un ISBN per aggiornare i dati');
+  // Azzera copertina per permettere nuova ricerca
+  coverDataUrl    = null;
+  currentCoverUrl = '';
+  coverCandidates = [];
+  hideCoverPicker();
+  renderCoverPreview();
+  // Ricerca diretta senza controllo duplicati
+  await _doIsbnLookup(isbnVal);
+}
+
 function pickCoverFile() { document.getElementById('cover-file-input').click(); }
 
 async function searchByTitleAuthor() {
@@ -1596,6 +1678,8 @@ async function selectTitleSearchResult(i) {
   document.getElementById('f-publisher').value   = res.publisher   || '';
   document.getElementById('f-year').value        = res.year        || '';
   document.getElementById('f-description').value = res.description || '';
+  document.getElementById('f-cat1').value        = '';
+  document.getElementById('f-cat2').value        = '';
   document.getElementById('f-notes').value       = '';
   document.getElementById('f-pages').value       = '';
   document.getElementById('f-language').value    = '';
@@ -1809,6 +1893,8 @@ async function saveBook() {
     language:     document.getElementById('f-language').value.trim(),
     description:  document.getElementById('f-description').value.trim(),
     location:     document.getElementById('f-location').value.trim().toUpperCase(),
+    cat1:         document.getElementById('f-cat1').value.trim(),
+    cat2:         document.getElementById('f-cat2').value.trim(),
     notes:        document.getElementById('f-notes').value.trim(),
     status:       currentStatus,
     rating:       currentRating,
@@ -2064,7 +2150,7 @@ async function lookupIsbn() {
   // Controllo duplicato ISBN
   const existingBook = allBooks.find(b => {
     const bIsbn = (b.isbn || '').replace(/[^0-9X]/gi,'').toUpperCase();
-    return bIsbn === isbn || bIsbn === isbn.slice(3, 12) + isbn[12]; // ISBN-13 vs ISBN-10
+    return bIsbn === isbn || bIsbn === isbn.slice(3, 12) + isbn[12];
   });
   if (existingBook) {
     const ok = await showConfirm(
