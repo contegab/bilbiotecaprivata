@@ -837,6 +837,7 @@ async function enterApp() {
     if (t) {
       await loadFromDrive();
       // Backup giornaliero automatico — ritardo extra per sicurezza
+      toast('PRE-BACKUP: allBooks=' + allBooks.length + ' fid=' + (driveFolderId||'null'));
       setTimeout(() => dailyDriveBackup(), 2000);
     }
   }, 400);
